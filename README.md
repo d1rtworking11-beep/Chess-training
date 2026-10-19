@@ -2,7 +2,7 @@
 
 Free chess training with 750 real Fischer, Kasparov and Carlsen games, move replay, guess-the-move practice, a hidden-pieces visualization drill, and Stockfish 19 analysis. Play either side against an adjustable bot (500–3000 approximate strength), see three candidate lines, and request hints.
 
-Every move gets a review in the style of Chess.com: a symbol on the moved piece, a label from Brilliant to Blunder, and one sentence on what changed. This covers your moves, the bot's replies and the masters' moves. A full-game review adds accuracy for both players, a tally of labels and an evaluation graph.
+Every move gets a review in the style of Chess.com: a symbol on the moved piece, a label from Brilliant to Blunder, and a short comment on what the move did and how the position changed. This covers your moves, the bot's replies and the masters' moves. A full-game review adds accuracy for both players, a tally of labels and an evaluation graph.
 
 ## Run
 
@@ -22,6 +22,12 @@ npm run test:e2e
 ```
 
 Browser tests use the environment's `/usr/bin/chromium`. Set `CHROMIUM_PATH` for another local Chromium installation. They exercise desktop/mobile, the game library, replay, legal moves, analysis, a real bot response, move-review badges, a full-game review and the Russian interface. `npm test` checks all 750 game sequences, core rules, the move-review classifier and the translations.
+
+## Hints and playing the bot
+
+During a bot game, and in master games while "Guess the master's next move" is on, the engine's candidate lines and move tips stay hidden so you find the move yourself. **Show engine lines** reveals them for the current position. The **Show hint** button sits under the move review: the first click highlights the piece to move, the second shows the best move with an arrow, and the third hides the hint. In a bot game, hints work on your turn only.
+
+The bot replies 3–5 seconds after your move, so you have time to read your move's comment. Pieces slide to their squares and captured pieces fade out; with the system's reduced-motion setting, moves appear instantly.
 
 ## Languages
 
@@ -55,7 +61,7 @@ Each move is rated from Stockfish's evaluation of the positions before and after
 | Book | ≡ | Opening theory: every position since the first move is on a named opening line, and the move gives up less than 10%. Book ends at the first move that fails either test and never returns |
 | Forced | → | The only legal move |
 
-The sentence names what changed: a mate allowed or missed, material lost along the engine's line, a missed punishment, or the evaluation before and after with the engine's preferred move. A Book move's sentence names the opening, and the full-game review shows the game's opening. A badge marks the moved piece, and a green arrow shows the stronger move for Excellent, Good and the four error labels. Per-move accuracy uses Lichess's formula, `103.1668 × e^(-4.354 × loss) − 3.1669`; a player's game accuracy is the average over their moves.
+Each comment says what the move does on the board: it castles, develops a piece, takes the center, captures, gives check, forks two pieces, saves an attacked piece, protects one, or attacks one. It then adds the verdict: a mate allowed or missed, material lost along the engine's line, a missed punishment, or the evaluation change next to the engine's preferred move. For good moves it says who stands better, and whether your position got stronger since your last move. A Book move's comment names the opening, and the full-game review shows the game's opening. The review card keeps the previous move's comment underneath, so your move's comment stays visible after the bot replies. A badge marks the moved piece, and a green arrow shows the stronger move for Excellent, Good and the four error labels. Per-move accuracy uses Lichess's formula, `103.1668 × e^(-4.354 × loss) − 3.1669`; a player's game accuracy is the average over their moves.
 
 "Review full game" rates every move in order, spending 0.35 s per position. Live reviews use the panel's 0.5 s analysis. In master games, click the evaluation graph to jump to a move. The labels follow the expected-points idea Chess.com describes, but these thresholds and rules are this project's own approximation, not Chess.com's method.
 

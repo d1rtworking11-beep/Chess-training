@@ -26,6 +26,8 @@ test('every key the page, app and static build use is defined', () => {
   // Keys the app builds at runtime from a side, piece, mode or error code.
   for (const side of ['w', 'b']) { used.add('turn.' + side); used.add('msg.find.' + side); used.add('msg.newGame.' + side); for (const piece of 'pnbrqk') used.add('square.' + side + piece); }
   for (const piece of 'qrbn') used.add('piece.' + piece);
+  for (const piece of 'pnbrqk') used.add('pieceName.' + piece);
+  for (const who of ['you', 'bot', 'w', 'b']) used.add('who.' + who);
   for (const mode of ['practice', 'bot']) for (const part of ['title', 'titleEm', 'subtitle']) used.add(`mode.${mode}.${part}`);
   for (const code of ['engineLoad', 'analysisTimeout', 'library']) used.add('error.' + code);
   assert.deepEqual([...used].filter(key => !Object.hasOwn(STRINGS.en, key)), []);

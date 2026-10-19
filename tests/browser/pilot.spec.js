@@ -1,18 +1,25 @@
 import {test,expect} from '@playwright/test';
-test('library, replay, legal board, engine hint and bot responses work',async({page})=>{
+test('library, replay, hidden lines, hints, move comments and a timed bot reply work',async({page})=>{
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto('/');await expect(page.locator('#game-count')).toHaveText('750');
  await expect(page.locator('#engine-state')).toContainText('Stockfish',{timeout:45000});
- await expect(page.locator('.line')).toHaveCount(3);
+ await expect(page.locator('.line')).toHaveCount(0);await page.locator('#show-lines').click();await expect(page.locator('.line')).toHaveCount(3);
  await page.locator('#choose-game').click();await page.locator('#search').fill('Fischer');await expect(page.locator('.game-row').first()).toBeVisible();
  await page.locator('.game-row').first().click();await expect(page.locator('#match-title')).toContainText('Fischer');
  await page.locator('#first').click();await expect(page.locator('#ply')).toHaveText('Move 1');await page.locator('#next').click();await expect(page.locator('#turn')).toHaveText('Black to move');
  await page.locator('.nav[data-mode="bot"]').click();await expect(page.locator('#turn')).toHaveText('White to move');
  await expect(page.locator('#engine-state')).toContainText('Stockfish',{timeout:45000});
- await page.locator('[data-square="e2"]').click();await expect(page.locator('[data-square="e4"]')).toHaveClass(/legal/);await page.locator('[data-square="e4"]').click();
+ await page.locator('[data-square="e2"]').click();await expect(page.locator('[data-square="e4"]')).toHaveClass(/legal/);const movedAt=Date.now();await page.locator('[data-square="e4"]').click();
+ expect(await page.evaluate(()=>document.getAnimations().length)).toBeGreaterThan(0);
+ await expect(page.locator('#review-who')).toContainText('Your move',{timeout:30000});await expect(page.locator('#board-message')).toContainText('thinking');await expect(page.locator('#hint')).toBeDisabled();
  await expect(page.locator('#history-count')).toHaveText('1 move',{timeout:30000});
- await expect(page.locator('#turn')).toHaveText('White to move',{timeout:30000});await expect(page.locator('#moves button')).toHaveCount(2);
- await expect(page.locator('#engine-state')).toContainText('Stockfish');await expect(page.locator('#moves .mini')).toHaveCount(2,{timeout:30000});await expect(page.locator('#board .badge')).toHaveCount(1);await expect(page.locator('#review-title')).toHaveText(/ is (brilliant|a great move|best|excellent|good|a book move|forced|an inaccuracy|a mistake|a miss|a blunder)$/);await expect(page.locator('#review-text')).not.toBeEmpty();await page.locator('#hint').click();await expect(page.locator('#board-message')).toContainText('Engine suggestion');
+ await expect(page.locator('#turn')).toHaveText('White to move',{timeout:30000});expect(Date.now()-movedAt).toBeGreaterThan(2900);await expect(page.locator('#moves button')).toHaveCount(2);
+ await expect(page.locator('#engine-state')).toContainText('Stockfish');await expect(page.locator('#moves .mini')).toHaveCount(2,{timeout:30000});await expect(page.locator('#board .badge')).toHaveCount(1);await expect(page.locator('#review-title')).toHaveText(/ is (brilliant|a great move|best|excellent|good|a book move|forced|an inaccuracy|a mistake|a miss|a blunder)$/);await expect(page.locator('#review-text')).not.toBeEmpty();
+ await expect(page.locator('#review-who')).toContainText("Bot's move");await expect(page.locator('#review-previous')).toContainText('Your move');await expect(page.locator('#review-previous p')).not.toBeEmpty();
+ await expect(page.locator('#engine-state')).toContainText('depth',{timeout:30000});await expect(page.locator('.line')).toHaveCount(0);await expect(page.locator('#tip')).not.toContainText('Consider');
+ await page.locator('#hint').click();await expect(page.locator('#hint-text')).toContainText('Hint: look at your');await expect(page.locator('.square.hint-from')).toHaveCount(1);await expect(page.locator('#hint-label')).toHaveText('Show best move');
+ await page.locator('#hint').click();await expect(page.locator('#hint-text')).toContainText('Best move:');await expect(page.locator('.arrows.hint')).toHaveCount(1);
+ await page.locator('#hint').click();await expect(page.locator('#hint-text')).toBeEmpty();await expect(page.locator('.arrows.hint')).toHaveCount(0);
  expect(errors).toEqual([]);await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:'/tmp/openchess-desktop.png',fullPage:true});
 });
 test('mobile board fits viewport and library can close',async({page})=>{

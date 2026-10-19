@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Chess} from 'chess.js';
 import fs from 'node:fs';
-import {reviewMove, buildTheory, summarize, explain, headline, label} from '../public/review.js';
+import {reviewMove, buildTheory, summarize, explain, headline, label, motifs, comment} from '../public/review.js';
 const play = (sans, next) => { const c = new Chess(); for (const m of sans) c.move(m); return c.move(next); };
 const cp = (score, pv) => ({type: 'cp', score, pv, depth: 12});
 const mate = (score, pv) => ({type: 'mate', score, pv, depth: 12});
@@ -106,6 +106,29 @@ test('reviews read naturally in Russian', () => {
   const theory = reviewMove({Chess, move: play([], 'e4'), before: {lines: [cp(30, ['d2d4'])]}, after: {lines: [cp(-25, ['e7e5'])]}, book: true, opening: "King's Pawn Game"});
   assert.equal(headline(theory, 'ru'), 'e4 — ход по теории'); assert.equal(headline(theory), 'e4 is a book move');
   assert.equal(explain(theory, 'ru'), "e4 соответствует дебютной теории (King's Pawn Game).");
+});
+
+test('move motifs: fork, save, protect, castle, development, center and mate', () => {
+  const from = (fen, san) => new Chess(fen).move(san);
+  assert.deepEqual(motifs(Chess, from('r3k3/8/8/1N6/8/8/8/4K3 w - - 0 1', 'Nc7+')), [{kind: 'fork', pieces: ['k', 'r']}]);
+  assert.deepEqual(motifs(Chess, from('4k3/8/8/8/6b1/5N2/8/4K3 w - - 0 1', 'Ke2')), [{kind: 'protect', piece: 'n', square: 'f3'}]);
+  assert.equal(motifs(Chess, from('4k3/8/p7/1B6/8/8/8/4K3 w - - 0 1', 'Bd3'))[0].kind, 'save');
+  assert.deepEqual(motifs(Chess, from('4k3/8/8/8/8/8/8/4K2R w K - 0 1', 'O-O')), [{kind: 'castle', side: 'k'}]);
+  assert.deepEqual(motifs(Chess, play(['e4', 'e5'], 'Nf3')), [{kind: 'develop', piece: 'n'}, {kind: 'threat', piece: 'p', square: 'e5'}]);
+  assert.deepEqual(motifs(Chess, play([], 'e4')), [{kind: 'center'}]);
+  assert.deepEqual(motifs(Chess, play(['e4', 'e5', 'Qh5', 'Nc6', 'Bc4', 'Nf6'], 'Qxf7#')), [{kind: 'mate'}]);
+});
+
+test('move comments say what changed, in both languages', () => {
+  const nf3 = reviewMove({Chess, move: play(['e4', 'e5'], 'Nf3'), before: {lines: [cp(30, ['g1f3'])]}, after: {lines: [cp(-30, ['b8c6'])]}});
+  assert.equal(comment(nf3, 'en', {who: 'you'}), 'Nf3 develops the knight and attacks the pawn on e5. The position is balanced.');
+  assert.equal(comment(nf3, 'ru', {who: 'you'}), 'Nf3 развивает коня и нападает на пешку e5. Позиция равна.');
+  const fork = reviewMove({Chess, move: new Chess('r3k3/8/8/1N6/8/8/8/4K3 w - - 0 1').move('Nc7+'), before: {lines: [cp(500, ['b5c7'])]}, after: {lines: [cp(-500, ['e8d7'])]}});
+  assert.equal(comment(fork, 'en', {who: 'you', previous: {winAfter: 0.5}}), 'Nc7+ forks the king and the rook. Your position gets stronger. You are clearly better.');
+  assert.equal(comment(fork, 'ru', {who: 'bot'}), 'Nc7+ ставит вилку королю и ладье. У бота явный перевес.');
+  const queen = reviewMove({Chess, move: play(['e4', 'd5'], 'Qg4'), before: {lines: [cp(10, ['e4d5', 'd8d5'])]}, after: {lines: [cp(850, ['c8g4', 'd2d3', 'g4e6'])]}});
+  assert.equal(comment(queen, 'en', {who: 'w'}), 'Qg4 protects the pawn on e4. This loses the queen after Bxg4; exd5 was better.');
+  assert.equal(comment(queen, 'ru', {who: 'w'}), 'Qg4 защищает пешку на e4. После Bxg4 теряется ферзь; лучше было exd5.');
 });
 
 test('the only legal move is Forced', () => {

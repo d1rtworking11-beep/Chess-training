@@ -1,11 +1,12 @@
 import { Chess } from '/vendor/chess.js';
 import { Engine } from './engine.js';
-import { CATEGORIES, SUMMARY_ORDER, reviewMove, buildTheory, summarize, explain, headline, label } from './review.js';
+import { CATEGORIES, SUMMARY_ORDER, reviewMove, buildTheory, summarize, comment, headline, label } from './review.js';
 import { t, getLanguage, setLanguage, applyStatic, decimal, locale } from './i18n.js';
 const $ = id => document.getElementById(id);
 const pieces = {k:'♚',q:'♛',r:'♜',b:'♝',n:'♞',p:'♟'};
 // Text on the page is rendered from this state, so switching language can redraw everything.
-const state = {chess:new Chess(), mode:'practice', library:[], libraryError:null, record:null, recordMoves:[], ply:0, flipped:false, selected:null, legal:[], last:null, revision:0, busy:false, evaluation:null, lines:[], page:0, reviewRun:0, gameReview:null, progress:null, message:{key:'msg.selectPiece',params:{}}, analysis:null, shown:{kind:'empty'}, engine:'starting', bot:{elo:'1500',side:'w'}};
+// reveal: how far the hint for the current position is shown (1 = piece, 2 = best move).
+const state = {chess:new Chess(), mode:'practice', library:[], libraryError:null, record:null, recordMoves:[], ply:0, flipped:false, selected:null, legal:[], last:null, revision:0, busy:false, thinking:false, botToken:0, evaluation:null, lines:[], page:0, reviewRun:0, gameReview:null, progress:null, message:{key:'msg.selectPiece',params:{}}, analysis:null, shown:{kind:'empty'}, engine:'starting', bot:{elo:'1500',side:'w'}, reveal:{fen:null,step:0,wait:false}, linesFor:null};
 const engine = new Engine();
 const analyses = new Map(), reviews = new Map();
 let theory = () => ({book:false, opening:null});
@@ -13,6 +14,11 @@ const openingsReady = fetch('/data/openings.json').then(response=>{if(!response.
 engine.ready.then(() => { state.engine='ready'; renderEngineState(); }).catch(error => { state.engine=error; renderEngineState(); message('msg.error',{error}); showReview({kind:'error',error}); });
 const errorText = error => error?.code ? t('error.'+error.code) : String(error?.message ?? error);
 const engineName = () => t(engine.compat ? 'engine.compat' : 'engine.name');
+// Engine lines and tips would give the move away while you are finding it yourself.
+const hideLines = () => state.mode==='bot' || $('guess-mode').checked;
+const whoOf = move => state.mode==='bot' ? (move.color===state.bot.side?'you':'bot') : move.color;
+const moveLabel = move => move.before.split(' ')[5]+(move.color==='w'?'. ':'… ')+move.san;
+const pieceSrc = (color, type) => '/pieces/'+color+type.toUpperCase()+'.svg';
 function message(key, params={}) { state.message={key,params}; renderMessage(); }
 function renderMessage() { const {key,params}=state.message,values={}; for(const [name,value] of Object.entries(params)) values[name]=value instanceof Error?errorText(value):value; $('board-message').textContent=t(key,values); }
 function uciMove(chess, uci) { return chess.move({from:uci.slice(0,2),to:uci.slice(2,4),promotion:uci[4] || 'q'}); }
@@ -23,12 +29,13 @@ function clearSelection(){state.selected=null;state.legal=[];}
 // Engine results are cached per position so live analysis and move reviews share work.
 function getAnalysis(fen, time=500){ if(!analyses.has(fen)) analyses.set(fen, engine.analyze(fen,{time}).catch(error=>{analyses.delete(fen);throw error;})); return analyses.get(fen); }
 const reviewKey = move => move.before+'|'+move.lan;
+const reviewOf = move => move && reviews.get(reviewKey(move));
 // line: the game's verbose moves from the start up to and including `move`.
 async function getReview(move, previous, line, time=500){
   const key=reviewKey(move); if(reviews.has(key)) return reviews.get(key);
   const before=await getAnalysis(move.before,time), after=await getAnalysis(move.after,time);
   await openingsReady;
-  const prevReview=previous && reviews.get(reviewKey(previous));
+  const prevReview=reviewOf(previous);
   const prior=previous && {captured:previous.captured,to:previous.to,category:prevReview?.category};
   const {book,opening}=theory(line,prevReview);
   const review=reviewMove({Chess,move,before,after,previous:prior,book,opening});
@@ -37,34 +44,43 @@ async function getReview(move, previous, line, time=500){
 function badge(category, className='badge'){const info=CATEGORIES[category],name=label(category,getLanguage()),b=document.createElement('span');b.className=className;b.textContent=info.symbol;b.style.setProperty('--c',info.color);b.title=name;b.setAttribute('aria-label',name);return b;}
 function moveList(){ return state.mode==='practice' && state.record ? state.recordMoves : state.chess.history({verbose:true}); }
 function squareCenter(sq){ let f='abcdefgh'.indexOf(sq[0]), r=8-Number(sq[1]); if(state.flipped){f=7-f;r=7-r;} return [f+0.5,r+0.5]; }
-function drawArrow(uci){
-  const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 8 8');svg.setAttribute('class','arrows');svg.setAttribute('aria-hidden','true');
+function drawArrow(uci, kind=''){
+  const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 8 8');svg.setAttribute('class','arrows'+(kind?' '+kind:''));svg.setAttribute('aria-hidden','true');
   const [x1,y1]=squareCenter(uci.slice(0,2)),[x2,y2]=squareCenter(uci.slice(2,4)),len=Math.hypot(x2-x1,y2-y1),ux=(x2-x1)/len,uy=(y2-y1)/len;
   const line=document.createElementNS(ns,'line');line.setAttribute('x1',x1+ux*0.15);line.setAttribute('y1',y1+uy*0.15);line.setAttribute('x2',x2-ux*0.32);line.setAttribute('y2',y2-uy*0.32);
   const head=document.createElementNS(ns,'polygon');const px=-uy,py=ux,bx=x2-ux*0.42,by=y2-uy*0.42;head.setAttribute('points',[[x2-ux*0.05,y2-uy*0.05],[bx+px*0.22,by+py*0.22],[bx-px*0.22,by-py*0.22]].map(p=>p.join(',')).join(' '));
   svg.append(line,head);return svg;
 }
-function render() {
-  const c=state.chess; const files=state.flipped?'hgfedcba':'abcdefgh'; const ranks=state.flipped?'12345678':'87654321';
-  const lastReview=state.last && reviews.get(reviewKey(state.last));
+// While a piece is sliding, the board is not rebuilt; a rebuild asked for meanwhile runs when it lands.
+const MOVE_MS=260, motion={until:0,pending:false,timer:0};
+const reduceMotion = () => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+function render(){ if(performance.now()<motion.until)motion.pending=true; else renderBoard(); renderPanel(); }
+function renderBoard() {
+  const c=state.chess,fen=c.fen(); const files=state.flipped?'hgfedcba':'abcdefgh'; const ranks=state.flipped?'12345678':'87654321';
+  const lastReview=reviewOf(state.last),hint=state.reveal.fen===fen?state.reveal.step:0,best=state.lines[0]?.pv[0];
   $('board').replaceChildren();
   for(const rank of ranks) for(const file of files){
     const sq=file+rank,p=c.get(sq),button=document.createElement('button');
-    button.className='square'+((file.charCodeAt(0)+Number(rank))%2===0?' dark':'')+(p?' '+(p.color==='w'?'white-piece':'black-piece'):'')+(sq===state.selected?' selected':'')+(state.legal.some(m=>m.to===sq)?' legal':'')+(state.last && [state.last.from,state.last.to].includes(sq)?' last':'');
+    button.className='square'+((file.charCodeAt(0)+Number(rank))%2===0?' dark':'')+(p?' '+(p.color==='w'?'white-piece':'black-piece'):'')+(sq===state.selected?' selected':'')+(state.legal.some(m=>m.to===sq)?' legal':'')+(state.last && [state.last.from,state.last.to].includes(sq)?' last':'')+(hint&&best&&sq===best.slice(0,2)?' hint-from':'');
     button.dataset.square=sq;button.setAttribute('aria-label',sq+' '+t(p?'square.'+p.color+p.type:'square.empty'));
-    if(p){const span=document.createElement('img');span.className='piece';span.src='/pieces/'+p.color+p.type.toUpperCase()+'.svg';span.alt='';span.draggable=false;button.append(span);}
+    if(p){const span=document.createElement('img');span.className='piece';span.src=pieceSrc(p.color,p.type);span.alt='';span.draggable=false;button.append(span);}
     if(file===files[0]){const label=document.createElement('span');label.className='coord rank';label.textContent=rank;button.append(label);}
     if(rank===ranks[7]){const label=document.createElement('span');label.className='coord file';label.textContent=file;button.append(label);}
     if(lastReview && sq===state.last.to) button.append(badge(lastReview.category));
     button.onclick=()=>clickSquare(sq);$('board').append(button);
   }
-  if(lastReview?.bestUci) $('board').append(drawArrow(lastReview.bestUci));
+  // The hint arrow wins; otherwise show the better alternative to the last move, except for the bot's moves.
+  if(hint>=2&&best) $('board').append(drawArrow(best,'hint'));
+  else if(lastReview?.bestUci && (state.mode!=='bot'||state.last.color===state.bot.side)) $('board').append(drawArrow(lastReview.bestUci));
+}
+function renderPanel(){
+  const c=state.chess;
   $('turn').textContent=c.isCheckmate()?t('turn.checkmate'):c.isDraw()?t('turn.draw'):t('turn.'+c.turn())+(c.isCheck()?t('turn.check'):'');
   const history=moveList();
   $('moves').replaceChildren();
   for(let i=0;i<history.length;i++){
     if(i%2===0){const n=document.createElement('span');n.textContent=i/2+1+'.';$('moves').append(n);}
-    const b=document.createElement('button');const review=reviews.get(reviewKey(history[i]));if(review)b.append(badge(review.category,'mini'));b.append(history[i].san);b.className=i===c.history().length-1?'current':'';
+    const b=document.createElement('button');const review=reviewOf(history[i]);if(review)b.append(badge(review.category,'mini'));b.append(history[i].san);b.className=i===c.history().length-1?'current':'';
     b.disabled=state.mode==='bot';b.onclick=()=>loadPosition(i+1);$('moves').append(b);
   }
   $('history-count').textContent=t('moves.count',{n:Math.ceil(history.length/2)});
@@ -73,29 +89,59 @@ function render() {
   $('prev').disabled ||= state.ply===0; $('first').disabled ||= state.ply===0;
   $('next').disabled ||= state.record && state.ply>=state.record.moves.length; $('last').disabled ||= state.record && state.ply>=state.record.moves.length;
   $('review-game').disabled=!history.length || state.gameReview?.running;
-  drawGraph();
+  drawGraph();renderHint();
 }
-// view: {kind:'empty'} | {kind:'pending',move} | {kind:'error',error} | {kind:'review',review}
+// Slides the piece already drawn on its new square in from where it came; a fading copy shows a capture.
+function animateMove(move, reverse=false){
+  clearTimeout(motion.timer);motion.until=0;motion.pending=false;renderBoard();
+  if(!move||reduceMotion())return;
+  const square=sq=>$('board').querySelector('[data-square="'+sq+'"]');
+  const slides=[reverse?[move.to,move.from]:[move.from,move.to]];
+  if(move.flags.includes('k')||move.flags.includes('q')){const rank=move.color==='w'?'1':'8',rook=move.flags.includes('k')?['h'+rank,'f'+rank]:['a'+rank,'d'+rank];slides.push(reverse?[rook[1],rook[0]]:rook);}
+  for(const [from,to] of slides){const target=square(to),source=square(from),img=target?.querySelector('.piece');if(!img||!source)continue;const a=source.getBoundingClientRect(),b=target.getBoundingClientRect();img.style.zIndex='6';img.animate([{transform:`translate(${a.left-b.left}px,${a.top-b.top}px)`},{transform:'none'}],{duration:MOVE_MS,easing:'cubic-bezier(.25,.8,.35,1)'}).finished.then(()=>{img.style.zIndex='';},()=>{});}
+  if(move.captured){
+    const cell=square(move.flags.includes('e')?move.to[0]+move.from[1]:move.to);
+    if(cell&&reverse)cell.querySelector('.piece')?.animate([{opacity:0,transform:'scale(.6)'},{opacity:1,transform:'none'}],{duration:MOVE_MS,easing:'ease-out'});
+    else if(cell){const ghost=document.createElement('img');ghost.className='piece ghost';ghost.src=pieceSrc(move.color==='w'?'b':'w',move.captured);ghost.alt='';cell.prepend(ghost);ghost.animate([{opacity:1,transform:'none'},{opacity:0,transform:'scale(.55)'}],{duration:MOVE_MS,easing:'ease-in',fill:'forwards'}).finished.then(()=>ghost.remove(),()=>ghost.remove());}
+  }
+  motion.until=performance.now()+MOVE_MS;motion.timer=setTimeout(()=>{motion.until=0;if(motion.pending){motion.pending=false;renderBoard();}},MOVE_MS+20);
+}
+// view: {kind:'empty'} | {kind:'error',error} | {kind:'pending'|'review',line}; line = the game's moves so far.
 function showReview(view){ state.shown=view; renderReview(); }
 function renderReview(){
-  const view=state.shown,card=$('review-card');card.style.removeProperty('--c');$('review-meta').replaceChildren();
+  const view=state.shown,card=$('review-card'),lang=getLanguage();card.style.removeProperty('--c');$('review-meta').replaceChildren();$('review-who').textContent='';
   const symbol=$('review-badge');symbol.textContent='·';symbol.style.removeProperty('--c');symbol.classList.remove('pending');
+  renderPrevious(view.line);
   if(view.kind==='error'){$('review-title').textContent=t('review.unavailable');$('review-text').textContent=errorText(view.error);return;}
   if(view.kind==='empty'){$('review-title').textContent=t('review.makeMove');$('review-text').textContent=t('review.intro');return;}
-  if(view.kind==='pending'){symbol.classList.add('pending');symbol.textContent='…';$('review-title').textContent=t('review.pendingTitle',{san:view.move.san});$('review-text').textContent=t('review.pendingText');return;}
-  const review=view.review,lang=getLanguage();
+  const move=view.line.at(-1),review=reviewOf(move);
+  $('review-who').textContent=t('who.'+whoOf(move))+' · '+moveLabel(move);
+  if(!review){symbol.classList.add('pending');symbol.textContent='…';$('review-title').textContent=t('review.pendingTitle',{san:move.san});$('review-text').textContent=t('review.pendingText');return;}
   card.style.setProperty('--c',review.color);symbol.textContent=review.symbol;symbol.style.setProperty('--c',review.color);
   $('review-title').textContent=headline(review,lang);
-  $('review-text').textContent=explain(review,lang);
+  $('review-text').textContent=comment(review,lang,{who:whoOf(move),previous:reviewOf(view.line.at(-3))});
   const chip=text=>{const s=document.createElement('span');s.className='chip';s.textContent=text;$('review-meta').append(s);};
   chip(t('chip.eval',{change:review.evalBefore+' → '+review.evalAfter}));chip(t('chip.accuracy',{value:Math.round(review.accuracy)}));if(review.bestUci)chip(t('chip.best',{move:review.bestSan}));
+}
+// The move before the latest stays visible, so your move's comment survives the bot's reply.
+function renderPrevious(line){
+  const box=$('review-previous'),move=line?.at(-2),review=reviewOf(move);
+  box.classList.toggle('hidden',!review);
+  if(!review){box.replaceChildren();return;}
+  const lang=getLanguage(),body=document.createElement('div'),who=document.createElement('small'),title=document.createElement('b'),text=document.createElement('p');
+  who.className='review-who';who.textContent=t('who.'+whoOf(move))+' · '+moveLabel(move);title.textContent=headline(review,lang);text.textContent=comment(review,lang,{who:whoOf(move),previous:reviewOf(line.at(-4))});
+  body.append(who,title,text);box.replaceChildren(badge(review.category,'mini'),body);
 }
 async function reviewLast(){
   const history=state.chess.history({verbose:true}),move=history.at(-1);
   if(!move){showReview({kind:'empty'});return;}
-  const key=reviewKey(move);if(!reviews.has(key))showReview({kind:'pending',move});
-  try{const review=await getReview(move,history.at(-2),history);if(state.last&&reviewKey(state.last)===key){showReview({kind:'review',review});render();}}
-  catch(error){if(state.last&&reviewKey(state.last)===key)showReview({kind:'error',error});}
+  const key=reviewKey(move),current=()=>state.last&&reviewKey(state.last)===key;
+  showReview({kind:reviews.has(key)?'review':'pending',line:history});
+  try{
+    await getReview(move,history.at(-2),history);if(current()){renderReview();render();}
+    const previous=history.at(-2);
+    if(previous&&!reviews.has(reviewKey(previous))){await getReview(previous,history.at(-3),history.slice(0,-1));if(current()){renderReview();render();}}
+  }catch(error){if(current())showReview({kind:'error',error});}
 }
 async function clickSquare(sq){
   if(state.busy||state.chess.isGameOver())return;
@@ -106,15 +152,15 @@ async function clickSquare(sq){
 }
 function choosePromotion(){return new Promise(resolve=>{$('promotion-options').replaceChildren();for(const piece of ['q','r','b','n']){const b=document.createElement('button');b.textContent=pieces[piece];b.setAttribute('aria-label',t('piece.'+piece));b.onclick=()=>{$('promotion').close();resolve(piece);};$('promotion-options').append(b);}$('promotion').oncancel=e=>e.preventDefault();$('promotion').showModal();});}
 async function playMove(move){
-  let made;
+  let made;const movedAt=performance.now();
   try{made=state.chess.move(move);}catch{return;}
   state.last=made;clearSelection();
   if(state.mode==='bot'&&state.gameReview)resetGameReview();
   if(state.mode==='practice'&&state.record){const expected=state.record.moves[state.ply];if($('guess-mode').checked){if(made.san===expected)message('msg.correct',{move:expected});else message('msg.differs',{played:made.san,expected});}else message('msg.exploring',{move:made.san});if(made.san===expected)state.ply++;}
-  render();
+  render();animateMove(made);
   const analysis=analyze();reviewLast();await analysis;
   if(state.mode==='bot'&&state.chess.isGameOver())message('msg.gameOver');
-  if(state.mode==='bot'&&!state.chess.isGameOver()&&state.chess.turn()!==$('side').value)await botMove();
+  if(state.mode==='bot'&&!state.chess.isGameOver()&&state.chess.turn()!==$('side').value)await botMove(movedAt);
 }
 async function analyze(){
   const revision=++state.revision,fen=state.chess.fen();state.evaluation=null;state.lines=[];state.analysis={status:'loading'};renderAnalysis();
@@ -123,6 +169,8 @@ async function analyze(){
     const first=result.lines[0];state.lines=result.lines;
     if(first)state.evaluation=whiteScore(first,state.chess.turn());
     state.analysis={status:first?'ready':'none',fen,turn:state.chess.turn(),lines:result.lines,check:state.chess.isCheck(),over:state.chess.isGameOver()};renderAnalysis();
+    // A hint asked for before the engine finished appears as soon as it has.
+    if(state.reveal.fen===fen&&state.reveal.wait&&first){state.reveal.wait=false;state.reveal.step=1;render();}else renderHint();
   }catch(error){if(revision===state.revision){state.analysis={status:'error',error};renderAnalysis();message('msg.error',{error});}}
 }
 function renderAnalysis(){
@@ -134,8 +182,14 @@ function renderAnalysis(){
   $('score').textContent=scoreText(first,a.turn);$('eval-fill').style.height=(50+45*Math.tanh(cp/500))+'%';$('eval-number').textContent=$('score').textContent;
   $('advantage').textContent=t(Math.abs(cp)<35?'analysis.balanced':cp>0?'analysis.whiteBetter':'analysis.blackBetter');
   $('engine-state').textContent=t('engine.depth',{name:engineName(),depth:first.depth});$('lines').replaceChildren();
-  a.lines.forEach((line,i)=>{const div=document.createElement('div');div.className='line';const score=document.createElement('span');score.className='line-score';score.textContent=scoreText(line,a.turn);const pv=document.createElement('span');pv.className='variation';pv.textContent=variation(a.fen,line.pv);pv.title=pv.textContent;const tag=document.createElement('small');tag.textContent=t(i===0?'line.best':'line.alt');div.append(score,pv,tag);$('lines').append(div);});
-  const tip=t('tip.consider',{move:variation(a.fen,first.pv.slice(0,1))});
+  let tip;
+  if(hideLines()&&state.linesFor!==a.fen){
+    const box=document.createElement('div'),note=document.createElement('p'),reveal=document.createElement('button');box.className='lines-hidden';note.textContent=t('analysis.hidden');reveal.id='show-lines';reveal.type='button';reveal.className='show-lines';reveal.textContent=t('analysis.showLines');reveal.onclick=()=>{state.linesFor=a.fen;renderAnalysis();};box.append(note,reveal);$('lines').append(box);
+    tip=t('coach.default');
+  }else{
+    a.lines.forEach((line,i)=>{const div=document.createElement('div');div.className='line';const score=document.createElement('span');score.className='line-score';score.textContent=scoreText(line,a.turn);const pv=document.createElement('span');pv.className='variation';pv.textContent=variation(a.fen,line.pv);pv.title=pv.textContent;const tag=document.createElement('small');tag.textContent=t(i===0?'line.best':'line.alt');div.append(score,pv,tag);$('lines').append(div);});
+    tip=t('tip.consider',{move:variation(a.fen,first.pv.slice(0,1))});
+  }
   $('tip').textContent=a.check?t('tip.check')+' '+tip:tip;
 }
 function renderEngineState(){
@@ -143,17 +197,39 @@ function renderEngineState(){
   if(state.analysis){renderAnalysis();return;}
   if(state.engine==='ready')$('engine-state').textContent=engineName();
 }
-async function botMove(){
-  if(state.busy||state.chess.isGameOver())return;state.busy=true;const revision=state.revision;const fen=state.chess.fen();message('msg.botThinking');
-  try{const elo=Number($('elo').value);const result=await engine.analyze(fen,{elo,time:elo>=2500?1200:400});if(revision!==state.revision||state.chess.fen()!==fen)return;
+// Hint in steps: first the piece to move, then the best move, then hidden again.
+function renderHint(){
+  const c=state.chess,fen=c.fen(),reveal=state.reveal.fen===fen?state.reveal:{step:0,wait:false},best=state.lines[0]?.pv[0];
+  const botTurn=state.mode==='bot'&&(c.turn()!==state.bot.side||state.thinking);
+  $('hint').disabled=botTurn||c.isGameOver();$('hint').title=botTurn?t('hint.botTurn'):'';
+  $('hint-label').textContent=t(['hint.button','hint.best','hint.hide'][reveal.step]);
+  let text='';
+  if(reveal.step&&best){const from=best.slice(0,2);text=reveal.step===1?t('hint.piece',{piece:t('pieceName.'+c.get(from).type),square:from}):t('hint.move',{move:variation(fen,[best])});}
+  else if(reveal.wait&&!best)text=t('msg.waitEngine');
+  $('hint-text').textContent=text;
+}
+function stopBot(){state.botToken++;state.busy=false;state.thinking=false;$('board-message').classList.remove('thinking');}
+// The bot replies 3–5 seconds after your move, however quickly the engine finds it.
+async function botMove(since=performance.now()){
+  if(state.busy||state.chess.isGameOver())return;
+  const token=++state.botToken,revision=state.revision,fen=state.chess.fen(),readyAt=since+3000+Math.random()*2000;
+  state.busy=true;state.thinking=true;message('msg.botThinking');$('board-message').classList.add('thinking');renderHint();
+  try{const elo=Number($('elo').value);const result=await engine.analyze(fen,{elo,time:elo>=2500?1200:400});
+    const wait=readyAt-performance.now();if(wait>0)await new Promise(resolve=>setTimeout(resolve,wait));
+    if(revision!==state.revision||state.chess.fen()!==fen)return;
     let move=result.best;const legal=state.chess.moves({verbose:true});
     // Below Stockfish's minimum Elo, add legal random moves to approximate a beginner.
     if(elo<1320 && Math.random()<(1320-elo)/1200){const pick=legal[Math.floor(Math.random()*legal.length)];move=pick.from+pick.to+(pick.promotion||'');}
-    if(move&&move!=='(none)'){state.last=uciMove(state.chess,move);render();message(state.chess.isGameOver()?'msg.botPlayedOver':'msg.botPlayed',{move:state.last.san});const analysis=analyze();reviewLast();await analysis;}
-  }catch(error){message('msg.retry',{error});}finally{state.busy=false;}
+    if(move&&move!=='(none)'){state.last=uciMove(state.chess,move);state.thinking=false;$('board-message').classList.remove('thinking');render();animateMove(state.last);message(state.chess.isGameOver()?'msg.botPlayedOver':'msg.botPlayed',{move:state.last.san});const analysis=analyze();reviewLast();await analysis;}
+  }catch(error){message('msg.retry',{error});}
+  finally{if(token===state.botToken){state.busy=false;state.thinking=false;$('board-message').classList.remove('thinking');renderHint();}}
 }
 function loadPosition(ply){
-  if(!state.record)return;state.revision++;state.busy=false;state.chess=new Chess();for(const move of state.record.moves.slice(0,ply))state.chess.move(move);state.ply=ply;state.last=state.chess.history({verbose:true}).at(-1)||null;clearSelection();render();message('msg.find.'+state.chess.turn());analyze();reviewLast();
+  if(!state.record)return;
+  const from=state.chess.history().length===state.ply?state.ply:null;
+  stopBot();state.revision++;state.chess=new Chess();for(const move of state.record.moves.slice(0,ply))state.chess.move(move);state.ply=ply;state.last=state.chess.history({verbose:true}).at(-1)||null;clearSelection();render();
+  if(from!==null&&ply===from+1)animateMove(state.last);else if(from!==null&&ply===from-1)animateMove(state.recordMoves[ply],true);
+  message('msg.find.'+state.chess.turn());analyze();reviewLast();
 }
 function resetGameReview(){state.reviewRun++;state.gameReview=null;state.progress=null;$('review-progress').classList.add('hidden');$('review-summary').classList.add('hidden');}
 function renderPlayers(){
@@ -168,7 +244,7 @@ function renderGameInfo(){
   else if(state.libraryError)$('match-title').textContent=t('game.unavailable');
 }
 function loadGame(record){resetGameReview();state.record=record;const replay=new Chess();state.recordMoves=record.moves.map(m=>replay.move(m));$('source-link').href=record.source;renderGameInfo();renderPlayers();loadPosition(Math.min(16,record.moves.length-1));}
-function newBot(){resetGameReview();state.revision++;state.busy=false;state.chess=new Chess();state.last=null;state.ply=0;clearSelection();state.bot={elo:$('elo').value,side:$('side').value};state.flipped=state.bot.side==='b';renderPlayers();render();showReview({kind:'empty'});message('msg.newGame.'+state.bot.side);analyze().then(()=>{if(state.mode==='bot'&&state.chess.turn()!==$('side').value)botMove();});}
+function newBot(){resetGameReview();stopBot();state.revision++;state.chess=new Chess();state.last=null;state.ply=0;clearSelection();state.bot={elo:$('elo').value,side:$('side').value};state.flipped=state.bot.side==='b';renderPlayers();render();showReview({kind:'empty'});message('msg.newGame.'+state.bot.side);analyze().then(()=>{if(state.mode==='bot'&&state.chess.turn()!==$('side').value)botMove();});}
 function renderModeText(){const m=state.mode,em=document.createElement('em');$('crumb').textContent=t(m==='practice'?'nav.practice':'nav.bot');em.textContent=t('mode.'+m+'.titleEm');$('title').replaceChildren(t('mode.'+m+'.title')+' ',em);$('subtitle').textContent=t('mode.'+m+'.subtitle');}
 function setMode(mode){state.mode=mode;$('board').classList.toggle('blindfold',mode==='practice'&&$('vision-mode').checked);document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));$('practice-settings').classList.toggle('hidden',mode!=='practice');$('bot-settings').classList.toggle('hidden',mode!=='bot');renderModeText();if(mode==='bot')newBot();else if(state.record)loadGame(state.record);}
 // Full-game review: rates every move in order, then shows accuracy, a tally and an evaluation graph.
@@ -185,7 +261,7 @@ async function reviewGame(){
     if(i%6===5)render();
   }
   state.gameReview.running=false;state.progress=null;$('review-progress').classList.add('hidden');renderSummary();render();
-  if(state.last){const r=reviews.get(reviewKey(state.last));if(r)showReview({kind:'review',review:r});}
+  if(state.last&&reviewOf(state.last))showReview({kind:'review',line:state.chess.history({verbose:true})});
 }
 function renderProgress(){if(!state.progress)return;const {key,params}=state.progress;$('review-progress-label').textContent=t(key,{...params,error:params.error&&errorText(params.error)});}
 function renderSummary(){
@@ -231,7 +307,8 @@ $('flip').onclick=()=>{state.flipped=!state.flipped;render();};$('reset').onclic
 $('first').onclick=()=>loadPosition(0);$('prev').onclick=()=>loadPosition(Math.max(0,state.ply-1));$('next').onclick=()=>loadPosition(Math.min(state.record.moves.length,state.ply+1));$('last').onclick=()=>loadPosition(state.record.moves.length);
 $('choose-game').onclick=()=>{renderLibrary();$('library').showModal();};$('close-library').onclick=()=>$('library').close();$('search').oninput=()=>{state.page=0;renderLibrary();};$('page-prev').onclick=()=>{state.page--;renderLibrary();};$('page-next').onclick=()=>{state.page++;renderLibrary();};
 $('random-game').onclick=()=>loadGame(state.library[Math.floor(Math.random()*state.library.length)]);$('elo').oninput=()=>$('elo-value').textContent=$('elo').value;$('new-bot').onclick=newBot;
-$('hint').onclick=()=>{const best=state.lines[0]?.pv[0];if(!best){message('msg.waitEngine');return;}state.selected=best.slice(0,2);state.legal=state.chess.moves({square:state.selected,verbose:true}).filter(m=>m.to===best.slice(2,4));render();message('msg.hint',{move:variation(state.chess.fen(),[best])});};
+$('hint').onclick=()=>{const fen=state.chess.fen();if(state.reveal.fen!==fen)state.reveal={fen,step:0,wait:false};if(!state.lines[0]?.pv[0]){state.reveal.wait=true;renderHint();return;}state.reveal.step=(state.reveal.step+1)%3;render();};
+$('guess-mode').onchange=()=>renderAnalysis();
 refreshLanguage();
 try{const response=await fetch('/data/games.json');if(!response.ok)throw Object.assign(new Error('Unable to load game library'),{code:'library'});state.library=await response.json();$('game-count').textContent=state.library.length.toLocaleString(locale());loadGame(state.library.find(g=>g.white.includes('Fischer')&&g.black.includes('Spassky'))||state.library[0]);}catch(error){state.libraryError=error;renderGameInfo();message('msg.error',{error});}
 
