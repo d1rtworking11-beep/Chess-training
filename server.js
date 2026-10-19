@@ -1,0 +1,10 @@
+import express from 'express';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const root = path.dirname(fileURLToPath(import.meta.url));
+const app = express();
+app.use('/engine', express.static(path.join(root, 'node_modules/stockfish/bin')));
+app.use('/vendor/chess.js', express.static(path.join(root, 'node_modules/chess.js/dist/esm/chess.js')));
+app.get('/health', (_, res) => res.json({ status: 'ok' }));
+app.use(express.static(path.join(root, process.env.NODE_ENV === 'production' ? 'dist' : 'public')));
+app.listen(Number(process.env.PORT || 3000), '0.0.0.0', () => console.log('OpenChess listening on port ' + (process.env.PORT || 3000)));

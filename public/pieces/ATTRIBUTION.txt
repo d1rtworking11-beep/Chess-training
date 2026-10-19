@@ -1,0 +1,5 @@
+Chess piece artwork by Colin M. L. Burnett (Cburnett).
+Source: https://github.com/lichess-org/lila/tree/master/public/piece/cburnett
+License: GPL version 2 or later; redistributed here under GPL version 3.
+License text: ../../LICENSE
+Original author: https://commons.wikimedia.org/wiki/User:Cburnett
