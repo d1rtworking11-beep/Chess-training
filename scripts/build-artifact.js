@@ -10,6 +10,7 @@ cpSync('public/data', out + '/data', {recursive: true});
 cpSync('public/pieces', out + '/pieces', {recursive: true});
 cpSync('public/style.css', out + '/style.css');
 cpSync('public/review.js', out + '/review.js');
+cpSync('public/i18n.js', out + '/i18n.js');
 cpSync('LICENSE', out + '/LICENSE.txt');
 cpSync('node_modules/stockfish/bin/stockfish-19-lite-single.js', out + '/engine/stockfish-19-lite-single.js');
 cpSync('node_modules/stockfish/bin/stockfish-19-lite-single.wasm', out + '/engine/stockfish-19-lite-single.wasm');
@@ -30,7 +31,7 @@ app = replaceOnce(app, "fetch('/data/openings.json')", "fetch('data/openings.jso
 // Sandboxed viewers block downloads, so show the PGN in a dialog with a copy button instead.
 app = replaceOnce(app, /\$\('download-pgn'\)\.onclick=.*$/m.exec(app)[0],
   "$('download-pgn').onclick=()=>{$('pgn-text').value=state.record.pgn;$('pgn-dialog').showModal();$('pgn-text').select();};\n" +
-  "$('copy-pgn').onclick=async()=>{try{await navigator.clipboard.writeText($('pgn-text').value);$('copy-pgn').textContent='Copied';}catch{$('pgn-text').select();$('copy-pgn').textContent='Press ⌘C / Ctrl+C';}setTimeout(()=>$('copy-pgn').textContent='Copy PGN',1800);};\n" +
+  "$('copy-pgn').onclick=async()=>{try{await navigator.clipboard.writeText($('pgn-text').value);$('copy-pgn').textContent=t('pgn.copied');}catch{$('pgn-text').select();$('copy-pgn').textContent=t('pgn.copyFallback');}setTimeout(()=>$('copy-pgn').textContent=t('pgn.copy'),1800);};\n" +
   "$('close-pgn').onclick=()=>$('pgn-dialog').close();");
 writeFileSync(out + '/app.js', app);
 
@@ -41,12 +42,12 @@ html = replaceOnce(html, '<title>OpenChess — Your next move</title>', '<title>
 html = replaceOnce(html, 'href="/style.css"', 'href="style.css"');
 html = replaceOnce(html, 'src="/app.js"', 'src="app.js"');
 html = replaceOnce(html, 'class="brand" href="/"', 'class="brand" href="#"');
-html = replaceOnce(html, 'Download PGN ↓', 'View PGN');
+html = replaceOnce(html, 'data-i18n="game.downloadPgn">Download PGN ↓', 'data-i18n="game.viewPgn">View PGN');
 html = replaceOnce(html, '<footer>', '<footer class="credits-footer">');
 html = replaceOnce(html, '</footer>',
-  '<span class="credits">GPLv3 · <a href="https://github.com/d1rtworking11-beep/Chess-training" target="_blank" rel="noopener">Source code</a> · <a href="LICENSE.txt" target="_blank">License</a> · <a href="https://github.com/official-stockfish/Stockfish" target="_blank" rel="noopener">Stockfish</a> (<a href="engine/STOCKFISH-COPYING.txt" target="_blank">GPLv3</a>, <a href="https://github.com/nmrugg/stockfish.js" target="_blank" rel="noopener">stockfish.js</a>) · Pieces by Colin M. L. Burnett (<a href="pieces/ATTRIBUTION.txt" target="_blank">GPLv2+</a>) · Games via <a href="https://github.com/rozim/ChessData" target="_blank" rel="noopener">rozim/ChessData</a> (PGN Mentor) · Opening names via <a href="https://github.com/lichess-org/chess-openings" target="_blank" rel="noopener">lichess-org/chess-openings</a> (CC0)</span></footer>');
+  '<span class="credits">GPLv3 · <a href="https://github.com/d1rtworking11-beep/Chess-training" target="_blank" rel="noopener" data-i18n="credits.source">Source code</a> · <a href="LICENSE.txt" target="_blank" data-i18n="credits.license">License</a> · <a href="https://github.com/official-stockfish/Stockfish" target="_blank" rel="noopener">Stockfish</a> (<a href="engine/STOCKFISH-COPYING.txt" target="_blank">GPLv3</a>, <a href="https://github.com/nmrugg/stockfish.js" target="_blank" rel="noopener">stockfish.js</a>) · <em class="tx" data-i18n="credits.pieces">Pieces by Colin M. L. Burnett</em> (<a href="pieces/ATTRIBUTION.txt" target="_blank">GPLv2+</a>) · <em class="tx" data-i18n="credits.games">Games via</em> <a href="https://github.com/rozim/ChessData" target="_blank" rel="noopener">rozim/ChessData</a> (PGN Mentor) · <em class="tx" data-i18n="credits.openings">Opening names via</em> <a href="https://github.com/lichess-org/chess-openings" target="_blank" rel="noopener">lichess-org/chess-openings</a> (CC0)</span></footer>');
 html = replaceOnce(html, '<dialog id="promotion">',
-  '<dialog id="pgn-dialog"><div class="modal-head"><div><div class="eyebrow">PORTABLE GAME NOTATION</div><h2>Game PGN</h2></div><button id="close-pgn" aria-label="Close PGN">×</button></div><textarea id="pgn-text" readonly rows="14" aria-label="PGN text"></textarea><div class="game-actions"><button id="copy-pgn">Copy PGN</button></div></dialog><dialog id="promotion">');
+  '<dialog id="pgn-dialog"><div class="modal-head"><div><div class="eyebrow" data-i18n="pgn.eyebrow">PORTABLE GAME NOTATION</div><h2 data-i18n="pgn.title">Game PGN</h2></div><button id="close-pgn" aria-label="Close PGN" data-i18n-attr="aria-label:pgn.close">×</button></div><textarea id="pgn-text" readonly rows="14" aria-label="PGN text" data-i18n-attr="aria-label:pgn.text"></textarea><div class="game-actions"><button id="copy-pgn" data-i18n="pgn.copy">Copy PGN</button></div></dialog><dialog id="promotion">');
 html = '<style>:root{color-scheme:dark}body{background:#161b1a}.credits-footer{flex-wrap:wrap;gap:8px 16px}.credits{flex-basis:100%;font-size:11px;opacity:.8}.credits a{color:var(--green)}#pgn-text{width:100%;min-height:220px;background:#111614;color:#e7e9e8;border:1px solid var(--line);border-radius:8px;padding:12px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical;margin:12px 0}</style>\n' + html.trim();
 // Keep the <title> within the first 8KB the host scans.
 html = html.replace(/^(<style>[\s\S]*?<\/style>\n)(<title>[\s\S]*?content="cover">)/, '$2$1');

@@ -16,7 +16,6 @@ export const CATEGORIES = {
 };
 export const SUMMARY_ORDER = ['brilliant', 'great', 'best', 'excellent', 'good', 'book', 'forced', 'inaccuracy', 'mistake', 'miss', 'blunder'];
 const VALUE = {p: 1, n: 3, b: 3, r: 5, q: 9, k: 0};
-const NAME = {p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king'};
 const BAD = ['inaccuracy', 'mistake', 'miss', 'blunder'];
 
 export const winChance = cp => 1 / (1 + Math.exp(-0.00368208 * cp));
@@ -49,7 +48,6 @@ function follow(Chess, fen, pv, mover, base, plies) {
   return {net: material(chess, mover) - base, lost, first};
 }
 const sanOf = (Chess, fen, uci) => { try { return new Chess(fen).move({from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || 'q'}).san; } catch { return uci; } };
-const article = piece => (piece === 'p' ? 'a ' : piece === 'q' ? 'the ' : 'a ') + NAME[piece];
 
 // move: chess.js verbose move (needs before, after, lan, san, piece, captured).
 // before/after: engine results {lines:[{type,score,pv}]} for move.before and move.after.
@@ -83,29 +81,85 @@ export function reviewMove({Chess, move, before, after, previous = null, book = 
   else if (category === 'best' && second && !recapture && winBefore - lineWin(second) >= 0.15 && lineWin(second) < 0.9) category = 'great';
   else if (BAD.includes(category) && ['mistake', 'blunder'].includes(previous?.category) && winBefore >= 0.6 && winAfter >= 0.4) category = 'miss';
 
-  const san = move.san, change = evalBefore + ' → ' + evalAfter;
-  const keeps = winAfter > 0.6 ? 'the advantage' : winAfter >= 0.4 ? 'the balance' : 'the game alive';
-  let text;
-  if (end.isCheckmate()) text = san + ' is checkmate.';
-  else if (category === 'forced') text = san + ' was the only legal move.';
-  else if (category === 'book') text = san + ' follows opening theory' + (opening ? ' (' + opening + ')' : '') + '.';
-  else if (category === 'brilliant') text = san + ' sacrifices ' + article(move.piece) + ', and the engine confirms it works (' + change + ').';
-  else if (category === 'great') text = san + ' is the only move that keeps ' + keeps + '; every alternative is clearly worse.';
+  // The reason behind the label; explain() turns it into a sentence in either language.
+  const keeps = winAfter > 0.6 ? 'advantage' : winAfter >= 0.4 ? 'balance' : 'alive';
+  let reason;
+  if (end.isCheckmate()) reason = {kind: 'checkmate'};
+  else if (category === 'forced' || category === 'book') reason = {kind: category};
+  else if (category === 'brilliant') reason = {kind: 'brilliant', piece: move.piece};
+  else if (category === 'great') reason = {kind: 'great', keeps};
   else if (category === 'best') {
-    if (reply?.type === 'mate' && reply.score < 0) text = san + ' is the best move and forces mate in ' + Math.abs(reply.score) + '.';
-    else if (move.captured && played.net >= 1) text = san + ' is the best move and wins ' + article(move.captured) + '.';
-    else text = san + ' is the engine’s top choice and keeps the evaluation at ' + evalAfter + '.';
-  } else if (category === 'excellent') text = san + ' is nearly as strong as the top move ' + bestSan + ' (' + change + ').';
-  else if (category === 'good') text = san + ' is playable, but ' + bestSan + ' was more precise (' + change + ').';
-  else if (reply?.type === 'mate' && reply.score > 0) text = san + ' allows mate in ' + reply.score + '; ' + bestSan + ' was necessary.';
-  else if (best?.type === 'mate' && best.score > 0) text = san + ' misses mate in ' + best.score + ' starting with ' + bestSan + '.';
-  else if (ideal.net - played.net >= 2 && played.lost) text = san + ' loses ' + article(played.lost.piece) + ' after ' + played.lost.san + '; ' + bestSan + ' was better.';
-  else if (category === 'miss') text = san + ' misses the chance to punish the last move with ' + bestSan + ' (' + change + ').';
-  else text = san + ' lets the evaluation slip from ' + evalBefore + ' to ' + evalAfter + '; ' + bestSan + ' was stronger.';
+    if (reply?.type === 'mate' && reply.score < 0) reason = {kind: 'bestMate', n: Math.abs(reply.score)};
+    else if (move.captured && played.net >= 1) reason = {kind: 'bestWins', piece: move.captured};
+    else reason = {kind: 'best'};
+  } else if (category === 'excellent' || category === 'good') reason = {kind: category};
+  else if (reply?.type === 'mate' && reply.score > 0) reason = {kind: 'allowsMate', n: reply.score};
+  else if (best?.type === 'mate' && best.score > 0) reason = {kind: 'missesMate', n: best.score};
+  else if (ideal.net - played.net >= 2 && played.lost) reason = {kind: 'loses', piece: played.lost.piece, reply: played.lost.san};
+  else if (category === 'miss') reason = {kind: 'miss'};
+  else reason = {kind: 'slip'};
 
-  return {category, ...CATEGORIES[category], text, loss, winBefore, winAfter, accuracy: moveAccuracy(loss),
-    book: inBook, opening, evalBefore, evalAfter, bestUci: isBest || !['excellent', 'good', ...BAD].includes(category) ? null : bestUci, bestSan, mover, san, captured: move.captured, to: move.to};
+  const review = {category, ...CATEGORIES[category], reason, loss, winBefore, winAfter, accuracy: moveAccuracy(loss),
+    book: inBook, opening, evalBefore, evalAfter, bestUci: isBest || !['excellent', 'good', ...BAD].includes(category) ? null : bestUci, bestSan, mover, san: move.san, captured: move.captured, to: move.to};
+  review.text = explain(review);
+  return review;
 }
+
+// Labels, headlines and explanations in English and Russian. Reviews keep their reason, so a page
+// can switch language and describe moves it has already reviewed without asking the engine again.
+const RU_CATEGORIES = {
+  brilliant: ['Блестящий', 'блестящий ход'], great: ['Отличный', 'отличный ход'], best: ['Лучший', 'лучший ход'],
+  excellent: ['Превосходный', 'превосходный ход'], good: ['Хороший', 'хороший ход'], book: ['Теория', 'ход по теории'],
+  forced: ['Вынужденный', 'вынужденный ход'], inaccuracy: ['Неточность', 'неточность'], mistake: ['Ошибка', 'ошибка'],
+  miss: ['Промах', 'промах'], blunder: ['Зевок', 'зевок'],
+};
+export const label = (category, lang = 'en') => lang === 'ru' ? RU_CATEGORIES[category][0] : CATEGORIES[category].label;
+export const headline = (review, lang = 'en') => lang === 'ru' ? review.san + ' — ' + RU_CATEGORIES[review.category][1] : review.san + ' is ' + CATEGORIES[review.category].phrase;
+// Russian piece names are in the accusative case ("теряет ферзя", "жертвует слона").
+const PIECE = {
+  en: {p: 'a pawn', n: 'a knight', b: 'a bishop', r: 'a rook', q: 'the queen', k: 'the king'},
+  ru: {p: 'пешку', n: 'коня', b: 'слона', r: 'ладью', q: 'ферзя', k: 'короля'},
+};
+const KEEPS = {en: {advantage: 'the advantage', balance: 'the balance', alive: 'the game alive'}, ru: {advantage: 'преимущество', balance: 'равновесие', alive: 'шансы на спасение'}};
+const ruMoves = n => { const form = new Intl.PluralRules('ru').select(n); return n + ' ' + (form === 'one' ? 'ход' : form === 'many' ? 'ходов' : 'хода'); };
+const change = r => r.evalBefore + ' → ' + r.evalAfter;
+const EXPLAIN = {
+  en: {
+    checkmate: r => `${r.san} is checkmate.`,
+    forced: r => `${r.san} was the only legal move.`,
+    book: r => `${r.san} follows opening theory${r.opening ? ` (${r.opening})` : ''}.`,
+    brilliant: (r, x) => `${r.san} sacrifices ${PIECE.en[x.piece]}, and the engine confirms it works (${change(r)}).`,
+    great: (r, x) => `${r.san} is the only move that keeps ${KEEPS.en[x.keeps]}; every alternative is clearly worse.`,
+    bestMate: (r, x) => `${r.san} is the best move and forces mate in ${x.n}.`,
+    bestWins: (r, x) => `${r.san} is the best move and wins ${PIECE.en[x.piece]}.`,
+    best: r => `${r.san} is the engine’s top choice and keeps the evaluation at ${r.evalAfter}.`,
+    excellent: r => `${r.san} is nearly as strong as the top move ${r.bestSan} (${change(r)}).`,
+    good: r => `${r.san} is playable, but ${r.bestSan} was more precise (${change(r)}).`,
+    allowsMate: (r, x) => `${r.san} allows mate in ${x.n}; ${r.bestSan} was necessary.`,
+    missesMate: (r, x) => `${r.san} misses mate in ${x.n} starting with ${r.bestSan}.`,
+    loses: (r, x) => `${r.san} loses ${PIECE.en[x.piece]} after ${x.reply}; ${r.bestSan} was better.`,
+    miss: r => `${r.san} misses the chance to punish the last move with ${r.bestSan} (${change(r)}).`,
+    slip: r => `${r.san} lets the evaluation slip from ${r.evalBefore} to ${r.evalAfter}; ${r.bestSan} was stronger.`,
+  },
+  ru: {
+    checkmate: r => `${r.san} — мат.`,
+    forced: r => `${r.san} — единственный возможный ход.`,
+    book: r => `${r.san} соответствует дебютной теории${r.opening ? ` (${r.opening})` : ''}.`,
+    brilliant: (r, x) => `${r.san} жертвует ${PIECE.ru[x.piece]}, и движок подтверждает, что жертва корректна (${change(r)}).`,
+    great: (r, x) => `${r.san} — единственный ход, сохраняющий ${KEEPS.ru[x.keeps]}; остальные заметно хуже.`,
+    bestMate: (r, x) => `${r.san} — лучший ход: он форсирует мат в ${ruMoves(x.n)}.`,
+    bestWins: (r, x) => `${r.san} — лучший ход, он выигрывает ${PIECE.ru[x.piece]}.`,
+    best: r => `${r.san} — первый выбор движка, оценка остаётся ${r.evalAfter}.`,
+    excellent: r => `${r.san} почти не уступает лучшему ходу ${r.bestSan} (${change(r)}).`,
+    good: r => `${r.san} — приемлемый ход, но ${r.bestSan} был точнее (${change(r)}).`,
+    allowsMate: (r, x) => `${r.san} допускает мат в ${ruMoves(x.n)}; необходимо было сыграть ${r.bestSan}.`,
+    missesMate: (r, x) => `${r.san} упускает мат в ${ruMoves(x.n)}, который начинался с ${r.bestSan}.`,
+    loses: (r, x) => `${r.san} теряет ${PIECE.ru[x.piece]} после ${x.reply}; лучше было ${r.bestSan}.`,
+    miss: r => `${r.san} упускает шанс наказать соперника за предыдущий ход: сильнее было ${r.bestSan} (${change(r)}).`,
+    slip: r => `${r.san} ухудшает оценку с ${r.evalBefore} до ${r.evalAfter}; сильнее было ${r.bestSan}.`,
+  },
+};
+export const explain = (review, lang = 'en') => EXPLAIN[lang === 'ru' ? 'ru' : 'en'][review.reason.kind](review, review.reason);
 
 // Opening theory from named openings (public/data/openings.json, see scripts/import-openings.js).
 // A move is Book only while every position since the first move lies on a named line, so Book

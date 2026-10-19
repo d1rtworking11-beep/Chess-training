@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Chess} from 'chess.js';
 import fs from 'node:fs';
-import {reviewMove, buildTheory, summarize} from '../public/review.js';
+import {reviewMove, buildTheory, summarize, explain, headline, label} from '../public/review.js';
 const play = (sans, next) => { const c = new Chess(); for (const m of sans) c.move(m); return c.move(next); };
 const cp = (score, pv) => ({type: 'cp', score, pv, depth: 12});
 const mate = (score, pv) => ({type: 'mate', score, pv, depth: 12});
@@ -94,6 +94,18 @@ test('bundled opening data matches Chess.com-style theory depth', () => {
   assert.equal(depth(fischer), 18); assert.equal(theory(line(fischer.moves.slice(0, 18))).opening, 'Ruy Lopez: Closed, Smyslov Defense');
   const depths = games.map(depth).sort((a, b) => a - b);
   assert.ok(depths[depths.length >> 1] <= 10, 'median Book depth should stay around the first five moves');
+});
+
+test('reviews read naturally in Russian', () => {
+  const queen = reviewMove({Chess, move: play(['e4', 'd5'], 'Qg4'), before: {lines: [cp(10, ['e4d5', 'd8d5'])]}, after: {lines: [cp(850, ['c8g4', 'd2d3', 'g4e6'])]}});
+  assert.equal(headline(queen, 'ru'), 'Qg4 — зевок'); assert.equal(label('blunder', 'ru'), 'Зевок');
+  assert.equal(explain(queen, 'ru'), 'Qg4 теряет ферзя после Bxg4; лучше было exd5.');
+  const allows = reviewMove({Chess, move: play(['f3', 'e5'], 'g4'), before: {lines: [cp(-60, ['e2e3'])]}, after: {lines: [mate(2, ['d8h4', 'g1f3'])]}});
+  assert.equal(explain(allows), 'g4 allows mate in 2; e3 was necessary.');
+  assert.equal(explain(allows, 'ru'), 'g4 допускает мат в 2 хода; необходимо было сыграть e3.');
+  const theory = reviewMove({Chess, move: play([], 'e4'), before: {lines: [cp(30, ['d2d4'])]}, after: {lines: [cp(-25, ['e7e5'])]}, book: true, opening: "King's Pawn Game"});
+  assert.equal(headline(theory, 'ru'), 'e4 — ход по теории'); assert.equal(headline(theory), 'e4 is a book move');
+  assert.equal(explain(theory, 'ru'), "e4 соответствует дебютной теории (King's Pawn Game).");
 });
 
 test('the only legal move is Forced', () => {

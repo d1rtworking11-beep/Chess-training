@@ -48,3 +48,10 @@
 .moves button:disabled{opacity:1;cursor:default}
 .review-opening{font-size:11px;color:#c6d2bf;margin:14px 0 0}
 .review-opening:empty{display:none}
+/* Language switch; .tx wraps translated text inside elements whose span rules would restyle it */
+.tx{font-style:normal}
+.header-end{display:flex;align-items:center;gap:14px}
+.lang-switch{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;flex-shrink:0}
+.lang-switch button{font-size:10px;font-weight:600;letter-spacing:1px;padding:6px 10px;color:#93a098}
+.lang-switch button[aria-pressed="true"]{background:#293629;color:var(--green)}
+@media(max-width:470px){.header-end{gap:8px}.lang-switch button{padding:5px 7px}.breadcrumbs .tx,.breadcrumbs span{display:none}}

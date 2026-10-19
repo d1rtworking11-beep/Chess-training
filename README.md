@@ -21,7 +21,15 @@ npm test
 npm run test:e2e
 ```
 
-Browser tests use the environment's `/usr/bin/chromium`. Set `CHROMIUM_PATH` for another local Chromium installation. They exercise desktop/mobile, the game library, replay, legal moves, analysis, a real bot response, move-review badges and a full-game review. `npm test` checks all 750 game sequences, core rules and the move-review classifier.
+Browser tests use the environment's `/usr/bin/chromium`. Set `CHROMIUM_PATH` for another local Chromium installation. They exercise desktop/mobile, the game library, replay, legal moves, analysis, a real bot response, move-review badges, a full-game review and the Russian interface. `npm test` checks all 750 game sequences, core rules, the move-review classifier and the translations.
+
+## Languages
+
+The interface is available in English and Russian. That covers menus, messages, move-review labels and explanations, the game summary, and the static build's PGN dialog and credits. Switch with **EN / RU** in the header, and the choice is saved in the browser. A first visit follows the browser's language, and a link ending in `#ru` or `#en` opens in that language.
+
+Move notation (Nf3, O-O) and evaluations (+0.4) stay international. Names from the sources also stay as they are, as on Lichess: players, events, PGN text and opening names.
+
+Interface text lives in `public/i18n.js`, and move-review labels and sentences live in `public/review.js`. `npm test` checks that both languages define the same keys and placeholders, and that every key the page uses exists.
 
 ## Pilot limits
 

@@ -18,10 +18,10 @@ export class Engine {
       const worker = new Worker(build.url);
       const fail = () => {
         clearTimeout(timer); worker.terminate();
-        if (rest.length) resolve(this.start(rest)); else reject(new Error('Engine could not load. Reload to retry.'));
+        if (rest.length) resolve(this.start(rest)); else reject(Object.assign(new Error('Engine could not load. Reload to retry.'), {code: 'engineLoad'}));
       };
       const timer = setTimeout(fail, 25000);
-      worker.onmessage = ({data}) => { if (String(data).includes('uciok')) { clearTimeout(timer); this.worker = worker; this.name = build.name; resolve(build.name); } };
+      worker.onmessage = ({data}) => { if (String(data).includes('uciok')) { clearTimeout(timer); this.worker = worker; this.name = build.name; this.compat = !build.wasm; resolve(build.name); } };
       worker.onerror = event => { event.preventDefault?.(); fail(); };
       worker.postMessage('uci');
     });
@@ -31,7 +31,7 @@ export class Engine {
       await this.ready;
       return new Promise((resolve, reject) => {
         const lines = new Map();
-        const timer = setTimeout(() => { this.worker.postMessage('stop'); reject(new Error('Analysis timed out.')); }, 15000);
+        const timer = setTimeout(() => { this.worker.postMessage('stop'); reject(Object.assign(new Error('Analysis timed out.'), {code: 'analysisTimeout'})); }, 15000);
         this.worker.onmessage = ({data}) => {
           const text = String(data);
           if (text.startsWith('info depth') && text.includes(' pv ')) {
