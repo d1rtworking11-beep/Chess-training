@@ -1,12 +1,13 @@
 import { Chess } from '/vendor/chess.js';
 import { Engine } from './engine.js';
-import { CATEGORIES, SUMMARY_ORDER, reviewMove, buildBook, summarize } from './review.js';
+import { CATEGORIES, SUMMARY_ORDER, reviewMove, buildTheory, summarize } from './review.js';
 const $ = id => document.getElementById(id);
 const pieces = {k:'♚',q:'♛',r:'♜',b:'♝',n:'♞',p:'♟'};
 const state = {chess:new Chess(), mode:'practice', library:[], record:null, recordMoves:[], ply:0, flipped:false, selected:null, legal:[], last:null, revision:0, busy:false, evaluation:null, lines:[], page:0, reviewRun:0, gameReview:null};
 const engine = new Engine();
 const analyses = new Map(), reviews = new Map();
-let isBook = () => false;
+let theory = () => ({book:false, opening:null});
+const openingsReady = fetch('/data/openings.json').then(response=>{if(!response.ok)throw new Error('Unable to load opening names');return response.json();}).then(data=>{theory=buildTheory(data);}).catch(()=>{});
 engine.ready.then(name => { $('engine-state').textContent=name; }).catch(error => { $('engine-state').textContent='Unavailable'; message(error.message); showReview({error:error.message}); });
 function message(text) { $('board-message').textContent = text; }
 function uciMove(chess, uci) { return chess.move({from:uci.slice(0,2),to:uci.slice(2,4),promotion:uci[4] || 'q'}); }
@@ -17,13 +18,15 @@ function clearSelection(){state.selected=null;state.legal=[];}
 // Engine results are cached per position so live analysis and move reviews share work.
 function getAnalysis(fen, time=500){ if(!analyses.has(fen)) analyses.set(fen, engine.analyze(fen,{time}).catch(error=>{analyses.delete(fen);throw error;})); return analyses.get(fen); }
 const reviewKey = move => move.before+'|'+move.lan;
-// The current master game is in the library itself, so its own moves need a second game to count as book.
-const inRecord = sans => state.mode==='practice' && !!state.record && sans.every((san,i)=>state.record.moves[i]===san);
-async function getReview(move, previous, sans, time=500){
+// line: the game's verbose moves from the start up to and including `move`.
+async function getReview(move, previous, line, time=500){
   const key=reviewKey(move); if(reviews.has(key)) return reviews.get(key);
   const before=await getAnalysis(move.before,time), after=await getAnalysis(move.after,time);
-  const prior=previous && {captured:previous.captured,to:previous.to,category:reviews.get(reviewKey(previous))?.category};
-  const review=reviewMove({Chess,move,before,after,previous:prior,book:isBook(sans,inRecord(sans)?2:1)});
+  await openingsReady;
+  const prevReview=previous && reviews.get(reviewKey(previous));
+  const prior=previous && {captured:previous.captured,to:previous.to,category:prevReview?.category};
+  const {book,opening}=theory(line,prevReview);
+  const review=reviewMove({Chess,move,before,after,previous:prior,book,opening});
   reviews.set(key,review); return review;
 }
 function badge(review, className='badge'){const b=document.createElement('span');b.className=className;b.textContent=review.symbol;b.style.setProperty('--c',review.color);b.title=review.label;b.setAttribute('aria-label',review.label);return b;}
@@ -83,7 +86,7 @@ async function reviewLast(){
   const history=state.chess.history({verbose:true}),move=history.at(-1);
   if(!move){showReview(null);return;}
   const key=reviewKey(move);if(!reviews.has(key))showReview('pending',move);
-  try{const review=await getReview(move,history.at(-2),history.map(m=>m.san));if(state.last&&reviewKey(state.last)===key){showReview(review);render();}}
+  try{const review=await getReview(move,history.at(-2),history);if(state.last&&reviewKey(state.last)===key){showReview(review);render();}}
   catch(error){if(state.last&&reviewKey(state.last)===key)showReview({error:error.message});}
 }
 async function clickSquare(sq){
@@ -145,7 +148,7 @@ async function reviewGame(){
   for(let i=0;i<moves.length;i++){
     if(run!==state.reviewRun)return;
     $('review-progress-label').textContent='Reviewing move '+(Math.floor(i/2)+1)+(i%2?'…':'.')+' ('+(i+1)+' of '+moves.length+')';$('review-progress-fill').style.width=(100*i/moves.length)+'%';
-    try{results.push(await getReview(moves[i],moves[i-1],moves.slice(0,i+1).map(m=>m.san),350));}
+    try{results.push(await getReview(moves[i],moves[i-1],moves.slice(0,i+1),350));}
     catch(error){if(run===state.reviewRun){$('review-progress-label').textContent='Review stopped: '+error.message;state.gameReview.running=false;render();}return;}
     if(run!==state.reviewRun)return;
     if(i%6===5)render();
@@ -158,6 +161,7 @@ function renderSummary(){
   const names=state.mode==='practice'&&state.record?{w:state.record.white,b:state.record.black}:{w:$('white-name').textContent,b:$('black-name').textContent};
   $('accuracy-white').textContent=sides.w.accuracy==null?'—':sides.w.accuracy.toFixed(1);$('accuracy-black').textContent=sides.b.accuracy==null?'—':sides.b.accuracy.toFixed(1);
   $('name-white').textContent=names.w;$('name-black').textContent=names.b;
+  const opening=results.at(-1)?.opening;$('review-opening').textContent=opening?'Opening: '+opening:'';
   const table=$('tally');table.replaceChildren();
   for(const key of SUMMARY_ORDER){const cat=CATEGORIES[key],row=document.createElement('div');row.className='tally-row';const w=document.createElement('b'),b=document.createElement('b'),label=document.createElement('span');w.textContent=sides.w.tally[key]||0;b.textContent=sides.b.tally[key]||0;label.append(badge(cat,'mini'),cat.label);if(!sides.w.tally[key]&&!sides.b.tally[key])row.classList.add('zero');row.append(w,label,b);table.append(row);}
   $('review-summary').classList.remove('hidden');
@@ -187,7 +191,7 @@ $('choose-game').onclick=()=>{renderLibrary();$('library').showModal();};$('clos
 $('random-game').onclick=()=>loadGame(state.library[Math.floor(Math.random()*state.library.length)]);$('elo').oninput=()=>$('elo-value').textContent=$('elo').value;$('new-bot').onclick=newBot;
 $('hint').onclick=()=>{const best=state.lines[0]?.pv[0];if(!best){message('Wait for the engine analysis, then try again.');return;}state.selected=best.slice(0,2);state.legal=state.chess.moves({square:state.selected,verbose:true}).filter(m=>m.to===best.slice(2,4));render();message('Engine suggestion: '+variation(state.chess.fen(),[best])+'. The highlighted piece and square show the idea.');};
 render();showReview(null);
-try{const response=await fetch('/data/games.json');if(!response.ok)throw new Error('Unable to load game library');state.library=await response.json();isBook=buildBook(state.library);$('game-count').textContent=state.library.length.toLocaleString();loadGame(state.library.find(g=>g.white.includes('Fischer')&&g.black.includes('Spassky'))||state.library[0]);}catch(error){$('match-title').textContent='Library unavailable';message(error.message);}
+try{const response=await fetch('/data/games.json');if(!response.ok)throw new Error('Unable to load game library');state.library=await response.json();$('game-count').textContent=state.library.length.toLocaleString();loadGame(state.library.find(g=>g.white.includes('Fischer')&&g.black.includes('Spassky'))||state.library[0]);}catch(error){$('match-title').textContent='Library unavailable';message(error.message);}
 
 $('vision-mode').onchange=()=>{$('board').classList.toggle('blindfold',$('vision-mode').checked);message($('vision-mode').checked?'Pieces hidden. Visualize the position and try a move, or uncheck to reveal.':'Pieces revealed.');};
 $('download-pgn').onclick=()=>{const url=URL.createObjectURL(new Blob([state.record.pgn],{type:'application/x-chess-pgn'}));const a=document.createElement('a');a.href=url;a.download=state.record.id+'.pgn';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};

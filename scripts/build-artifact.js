@@ -26,6 +26,7 @@ let app = readFileSync('public/app.js', 'utf8');
 app = replaceOnce(app, "from '/vendor/chess.js'", "from './vendor/chess.js'");
 app = replaceOnce(app, "'/pieces/'", "'pieces/'");
 app = replaceOnce(app, "fetch('/data/games.json')", "fetch('data/games.json')");
+app = replaceOnce(app, "fetch('/data/openings.json')", "fetch('data/openings.json')");
 // Sandboxed viewers block downloads, so show the PGN in a dialog with a copy button instead.
 app = replaceOnce(app, /\$\('download-pgn'\)\.onclick=.*$/m.exec(app)[0],
   "$('download-pgn').onclick=()=>{$('pgn-text').value=state.record.pgn;$('pgn-dialog').showModal();$('pgn-text').select();};\n" +
@@ -43,7 +44,7 @@ html = replaceOnce(html, 'class="brand" href="/"', 'class="brand" href="#"');
 html = replaceOnce(html, 'Download PGN ↓', 'View PGN');
 html = replaceOnce(html, '<footer>', '<footer class="credits-footer">');
 html = replaceOnce(html, '</footer>',
-  '<span class="credits">GPLv3 · <a href="https://github.com/d1rtworking11-beep/Chess-training" target="_blank" rel="noopener">Source code</a> · <a href="LICENSE.txt" target="_blank">License</a> · <a href="https://github.com/official-stockfish/Stockfish" target="_blank" rel="noopener">Stockfish</a> (<a href="engine/STOCKFISH-COPYING.txt" target="_blank">GPLv3</a>, <a href="https://github.com/nmrugg/stockfish.js" target="_blank" rel="noopener">stockfish.js</a>) · Pieces by Colin M. L. Burnett (<a href="pieces/ATTRIBUTION.txt" target="_blank">GPLv2+</a>) · Games via <a href="https://github.com/rozim/ChessData" target="_blank" rel="noopener">rozim/ChessData</a> (PGN Mentor)</span></footer>');
+  '<span class="credits">GPLv3 · <a href="https://github.com/d1rtworking11-beep/Chess-training" target="_blank" rel="noopener">Source code</a> · <a href="LICENSE.txt" target="_blank">License</a> · <a href="https://github.com/official-stockfish/Stockfish" target="_blank" rel="noopener">Stockfish</a> (<a href="engine/STOCKFISH-COPYING.txt" target="_blank">GPLv3</a>, <a href="https://github.com/nmrugg/stockfish.js" target="_blank" rel="noopener">stockfish.js</a>) · Pieces by Colin M. L. Burnett (<a href="pieces/ATTRIBUTION.txt" target="_blank">GPLv2+</a>) · Games via <a href="https://github.com/rozim/ChessData" target="_blank" rel="noopener">rozim/ChessData</a> (PGN Mentor) · Opening names via <a href="https://github.com/lichess-org/chess-openings" target="_blank" rel="noopener">lichess-org/chess-openings</a> (CC0)</span></footer>');
 html = replaceOnce(html, '<dialog id="promotion">',
   '<dialog id="pgn-dialog"><div class="modal-head"><div><div class="eyebrow">PORTABLE GAME NOTATION</div><h2>Game PGN</h2></div><button id="close-pgn" aria-label="Close PGN">×</button></div><textarea id="pgn-text" readonly rows="14" aria-label="PGN text"></textarea><div class="game-actions"><button id="copy-pgn">Copy PGN</button></div></dialog><dialog id="promotion">');
 html = '<style>:root{color-scheme:dark}body{background:#161b1a}.credits-footer{flex-wrap:wrap;gap:8px 16px}.credits{flex-basis:100%;font-size:11px;opacity:.8}.credits a{color:var(--green)}#pgn-text{width:100%;min-height:220px;background:#111614;color:#e7e9e8;border:1px solid var(--line);border-radius:8px;padding:12px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical;margin:12px 0}</style>\n' + html.trim();

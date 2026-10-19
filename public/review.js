@@ -53,7 +53,8 @@ const article = piece => (piece === 'p' ? 'a ' : piece === 'q' ? 'the ' : 'a ') 
 
 // move: chess.js verbose move (needs before, after, lan, san, piece, captured).
 // before/after: engine results {lines:[{type,score,pv}]} for move.before and move.after.
-export function reviewMove({Chess, move, before, after, previous = null, book = false}) {
+// book/opening: from buildTheory; a Book move that gives up 10% or more is rated by the engine and ends the book.
+export function reviewMove({Chess, move, before, after, previous = null, book = false, opening = null}) {
   const start = new Chess(move.before), end = new Chess(move.after);
   const mover = start.turn(), opponent = mover === 'w' ? 'b' : 'w';
   const lines = before?.lines || [], best = lines[0], reply = after?.lines?.[0];
@@ -74,9 +75,10 @@ export function reviewMove({Chess, move, before, after, previous = null, book = 
   if (isBest) category = 'best';
   const sacrifice = played.lost && played.lost.square === move.to && VALUE[move.piece] >= 3 && played.net <= -2;
   const recapture = previous?.captured && previous.to === move.to;
+  const inBook = book && loss < 0.10;
   if (start.moves().length === 1) category = 'forced';
   else if (end.isCheckmate()) category = 'best';
-  else if (book && loss < 0.10) category = 'book';
+  else if (inBook) category = 'book';
   else if ((category === 'best' || category === 'excellent') && sacrifice && winAfter >= 0.45 && winBefore < 0.97) category = 'brilliant';
   else if (category === 'best' && second && !recapture && winBefore - lineWin(second) >= 0.15 && lineWin(second) < 0.9) category = 'great';
   else if (BAD.includes(category) && ['mistake', 'blunder'].includes(previous?.category) && winBefore >= 0.6 && winAfter >= 0.4) category = 'miss';
@@ -86,7 +88,7 @@ export function reviewMove({Chess, move, before, after, previous = null, book = 
   let text;
   if (end.isCheckmate()) text = san + ' is checkmate.';
   else if (category === 'forced') text = san + ' was the only legal move.';
-  else if (category === 'book') text = san + ' is an established opening move, also played in the master games here.';
+  else if (category === 'book') text = san + ' follows opening theory' + (opening ? ' (' + opening + ')' : '') + '.';
   else if (category === 'brilliant') text = san + ' sacrifices ' + article(move.piece) + ', and the engine confirms it works (' + change + ').';
   else if (category === 'great') text = san + ' is the only move that keeps ' + keeps + '; every alternative is clearly worse.';
   else if (category === 'best') {
@@ -102,21 +104,24 @@ export function reviewMove({Chess, move, before, after, previous = null, book = 
   else text = san + ' lets the evaluation slip from ' + evalBefore + ' to ' + evalAfter + '; ' + bestSan + ' was stronger.';
 
   return {category, ...CATEGORIES[category], text, loss, winBefore, winAfter, accuracy: moveAccuracy(loss),
-    evalBefore, evalAfter, bestUci: isBest || !['excellent', 'good', ...BAD].includes(category) ? null : bestUci, bestSan, mover, san, captured: move.captured, to: move.to};
+    book: inBook, opening, evalBefore, evalAfter, bestUci: isBest || !['excellent', 'good', ...BAD].includes(category) ? null : bestUci, bestSan, mover, san, captured: move.captured, to: move.to};
 }
 
-// Opening-book lookup from the library: a move sequence is "book" when it appears
-// in at least `min` games (2 when reviewing a library game, so it can't match itself).
-export function buildBook(games, plies = 24) {
-  const counts = new Map();
-  for (const game of games) {
-    const seen = new Set();
-    for (let i = 1; i <= Math.min(plies, game.moves.length); i++) {
-      const key = game.moves.slice(0, i).join(' ');
-      if (!seen.has(key)) { seen.add(key); counts.set(key, (counts.get(key) || 0) + 1); }
+// Opening theory from named openings (public/data/openings.json, see scripts/import-openings.js).
+// A move is Book only while every position since the first move lies on a named line, so Book
+// covers the opening and, once a game leaves theory, never returns. `line` holds the chess.js
+// verbose moves from the start up to the move being checked; `previous` is the earlier move's review.
+export function buildTheory({names, positions}) {
+  const key = fen => fen.split(' ').slice(0, 4).join(' ');
+  return (line, previous = null) => {
+    let opening = null;
+    for (const move of line) {
+      const index = positions[key(move.after)];
+      if (index === undefined) return {book: false, opening};
+      if (index >= 0) opening = names[index][1];
     }
-  }
-  return (sans, min = 1) => sans.length <= plies && (counts.get(sans.join(' ')) || 0) >= min;
+    return {book: !previous || previous.book !== false, opening};
+  };
 }
 
 export function summarize(reviews) {

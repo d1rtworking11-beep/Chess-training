@@ -1,7 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Chess} from 'chess.js';
-import {reviewMove, buildBook, summarize} from '../public/review.js';
+import fs from 'node:fs';
+import {reviewMove, buildTheory, summarize} from '../public/review.js';
 const play = (sans, next) => { const c = new Chess(); for (const m of sans) c.move(m); return c.move(next); };
 const cp = (score, pv) => ({type: 'cp', score, pv, depth: 12});
 const mate = (score, pv) => ({type: 'mate', score, pv, depth: 12});
@@ -58,12 +59,41 @@ test('failing to punish the opponent’s blunder is a Miss', () => {
   assert.equal(r.category, 'miss'); assert.match(r.text, /misses the chance to punish the last move with Nf3/);
 });
 
-test('library openings are Book, and a game cannot match only itself', () => {
-  const isBook = buildBook([{moves: ['e4', 'e5', 'Nf3']}, {moves: ['e4', 'c5']}]);
-  assert.ok(isBook(['e4'], 2)); assert.ok(isBook(['e4', 'e5'], 1)); assert.ok(!isBook(['e4', 'e5'], 2));
+// A tiny theory set: 1.e4 (named), 1.e4 e5 (intermediate), 1.e4 e5 2.Nf3 (named).
+const key = fen => fen.split(' ').slice(0, 4).join(' ');
+const line = sans => { const c = new Chess(); return sans.map(m => c.move(m)); };
+const tiny = (() => { const moves = line(['e4', 'e5', 'Nf3']); return {names: [['B00', "King's Pawn Game"], ['C40', "King's Knight Opening"]], positions: {[key(moves[0].after)]: 0, [key(moves[1].after)]: -1, [key(moves[2].after)]: 1}}; })();
+
+test('Book follows named theory from the first move and names the opening', () => {
+  const theory = buildTheory(tiny);
+  assert.deepEqual(theory(line(['e4'])), {book: true, opening: "King's Pawn Game"});
+  assert.deepEqual(theory(line(['e4', 'e5'])), {book: true, opening: "King's Pawn Game"});
+  assert.deepEqual(theory(line(['e4', 'e5', 'Nf3'])), {book: true, opening: "King's Knight Opening"});
+  assert.deepEqual(theory(line(['e4', 'c5'])), {book: false, opening: "King's Pawn Game"});
+  assert.equal(theory(line(['d4'])).book, false);
+});
+
+test('Book never returns once a move has left it', () => {
+  const theory = buildTheory(tiny);
+  assert.equal(theory(line(['e4', 'e5', 'Nf3']), {book: false}).book, false);
+  assert.equal(theory(line(['e4', 'e5', 'Nf3']), {book: true}).book, true);
   const move = play([], 'e4');
-  const r = reviewMove({Chess, move, before: {lines: [cp(30, ['d2d4'])]}, after: {lines: [cp(-25, ['e7e5'])]}, book: true});
-  assert.equal(r.category, 'book'); assert.equal(r.bestUci, null);
+  const book = reviewMove({Chess, move, before: {lines: [cp(30, ['d2d4'])]}, after: {lines: [cp(-25, ['e7e5'])]}, book: true, opening: "King's Pawn Game"});
+  assert.equal(book.category, 'book'); assert.equal(book.book, true); assert.equal(book.bestUci, null);
+  assert.equal(book.text, "e4 follows opening theory (King's Pawn Game).");
+  const refuted = reviewMove({Chess, move, before: {lines: [cp(30, ['d2d4'])]}, after: {lines: [cp(120, ['e7e5'])]}, book: true});
+  assert.equal(refuted.category, 'mistake'); assert.equal(refuted.book, false);
+});
+
+test('bundled opening data matches Chess.com-style theory depth', () => {
+  const data = JSON.parse(fs.readFileSync('public/data/openings.json'));
+  assert.equal(data.license, 'CC0-1.0'); assert.equal(data.names.length, 3865); assert.equal(Object.keys(data.positions).length, 7982);
+  const theory = buildTheory(data), games = JSON.parse(fs.readFileSync('public/data/games.json'));
+  const depth = game => { const moves = line(game.moves); let n = 0; while (n < moves.length && theory(moves.slice(0, n + 1)).book) n++; return n; };
+  const fischer = games.find(g => g.white.includes('Fischer') && g.black.includes('Spassky'));
+  assert.equal(depth(fischer), 18); assert.equal(theory(line(fischer.moves.slice(0, 18))).opening, 'Ruy Lopez: Closed, Smyslov Defense');
+  const depths = games.map(depth).sort((a, b) => a - b);
+  assert.ok(depths[depths.length >> 1] <= 10, 'median Book depth should stay around the first five moves');
 });
 
 test('the only legal move is Forced', () => {

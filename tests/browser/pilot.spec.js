@@ -36,7 +36,8 @@ test('full game review rates every move with accuracy, tally and graph',async({p
  await page.locator('#review-game').click();await expect(page.locator('#review-progress')).toBeVisible();
  await expect(page.locator('#review-summary')).toBeVisible({timeout:170000});
  await expect(page.locator('#accuracy-white')).toHaveText(/^\d+\.\d$/);await expect(page.locator('#accuracy-black')).toHaveText(/^\d+\.\d$/);
- await expect(page.locator('#tally .tally-row')).toHaveCount(11);await expect(page.locator('#eval-graph path')).toHaveCount(1);
+ await expect(page.locator('#tally .tally-row')).toHaveCount(11);await expect(page.locator('#review-opening')).toHaveText(/^Opening: \S/);
+ const labels=await page.locator('#moves .mini').evaluateAll(els=>els.map(e=>e.title));const firstOut=labels.findIndex(l=>l!=='Book'&&l!=='Forced');expect(labels[0]).toBe('Book');expect(firstOut).toBeGreaterThan(0);expect(labels.slice(firstOut)).not.toContain('Book');await expect(page.locator('#eval-graph path')).toHaveCount(1);
  expect(await page.locator('#moves .mini').count()).toBe(await page.locator('#moves button').count());
  const graph=await page.locator('#eval-graph').boundingBox();await page.mouse.click(graph.x+2,graph.y+graph.height/2);await expect(page.locator('#ply')).toHaveText('Move 1');
  expect(errors).toEqual([]);await page.screenshot({path:'/tmp/openchess-review.png',fullPage:true});

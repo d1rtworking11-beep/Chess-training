@@ -46,3 +46,5 @@
 .moves{max-height:180px}
 @media(max-width:800px){.review-card{grid-column:1 / -1;grid-row:1}.analysis-card{grid-row:2 / span 2}}
 .moves button:disabled{opacity:1;cursor:default}
+.review-opening{font-size:11px;color:#c6d2bf;margin:14px 0 0}
+.review-opening:empty{display:none}
