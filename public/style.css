@@ -80,3 +80,20 @@
 .piece.ghost{position:absolute;inset:6%;pointer-events:none}
 @media(prefers-reduced-motion:reduce){.board-message.thinking::before{animation:none}}
 @media(max-width:800px){.hint-card{grid-column:1 / -1;grid-row:2}.analysis-card{grid-row:3 / span 2}}
+
+/* Checkmate drill */
+.drill-card h2{margin:14px 0 4px}
+.drill-status{font-size:12px;color:var(--green);margin:0 0 4px;font-variant-numeric:tabular-nums}
+.drill-status[data-state="failed"]{color:#ee6b55}
+.drill-length{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:14px 0 2px;font-size:11px;color:#b6c3b0}
+.drill-length .tx{margin-right:4px}
+.drill-length button{min-width:40px;padding:6px 10px;border:1px solid #46563e;border-radius:5px;font-size:11px;color:#c6d2bf}
+.drill-length button[aria-pressed="true"]{background:#293629;color:var(--green);border-color:var(--green)}
+.drill-solution{width:100%;padding:10px;border:1px solid #46563e;border-radius:5px;font-size:11px;color:var(--green)}
+.drill-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0 4px}
+.drill-stats div{background:#263324;border-radius:6px;padding:8px 10px;min-width:0}
+.drill-stats strong{display:block;font-size:20px;font-weight:550;color:#f2f3f0;font-variant-numeric:tabular-nums}
+.drill-stats span{display:block;font-size:9px;letter-spacing:1px;text-transform:uppercase;color:#7f8f7a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.drill-card .micro a{color:#afc998;text-decoration:none}
+/* Three sections no longer fit beside the logo on a phone: the logo takes its own row. */
+@media(max-width:470px){.sidebar{flex-wrap:wrap;row-gap:10px}.brand{flex-basis:100%}.nav{flex:1 1 0;min-width:0;justify-content:center;text-align:center}.nav span{white-space:normal;line-height:1.25}}

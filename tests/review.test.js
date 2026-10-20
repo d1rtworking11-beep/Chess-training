@@ -126,6 +126,9 @@ test('move comments say what changed, in both languages', () => {
   const fork = reviewMove({Chess, move: new Chess('r3k3/8/8/1N6/8/8/8/4K3 w - - 0 1').move('Nc7+'), before: {lines: [cp(500, ['b5c7'])]}, after: {lines: [cp(-500, ['e8d7'])]}});
   assert.equal(comment(fork, 'en', {who: 'you', previous: {winAfter: 0.5}}), 'Nc7+ forks the king and the rook. Your position gets stronger. You are clearly better.');
   assert.equal(comment(fork, 'ru', {who: 'bot'}), 'Nc7+ ставит вилку королю и ладье. У бота явный перевес.');
+  assert.equal(comment(fork, 'en', {who: 'opp'}), 'Nc7+ forks the king and the rook. The opponent is clearly better.');
+  const grab = reviewMove({Chess, move: new Chess('4k3/8/8/3q4/8/4N3/4P3/4K3 w - - 0 1').move('Nxd5'), before: {lines: [cp(900, ['e3d5'])]}, after: {lines: [cp(-900, ['e8d7'])]}});
+  assert.equal(grab.reason.kind, 'bestWins'); assert.equal(comment(grab, 'en', {who: 'you'}), 'Nxd5 takes the queen. You are winning.');
   const queen = reviewMove({Chess, move: play(['e4', 'd5'], 'Qg4'), before: {lines: [cp(10, ['e4d5', 'd8d5'])]}, after: {lines: [cp(850, ['c8g4', 'd2d3', 'g4e6'])]}});
   assert.equal(comment(queen, 'en', {who: 'w'}), 'Qg4 protects the pawn on e4. This loses the queen after Bxg4; exd5 was better.');
   assert.equal(comment(queen, 'ru', {who: 'w'}), 'Qg4 защищает пешку на e4. После Bxg4 теряется ферзь; лучше было exd5.');

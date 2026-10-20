@@ -22,14 +22,15 @@ test('every key the page, app and static build use is defined', () => {
     for (const m of text.matchAll(/data-i18n="([^"]+)"/g)) used.add(m[1]);
     for (const m of text.matchAll(/data-i18n-attr="([^"]+)"/g)) for (const pair of m[1].split(';')) used.add(pair.split(':')[1]);
   }
-  for (const file of ['public/app.js', 'scripts/build-artifact.js']) for (const m of fs.readFileSync(file, 'utf8').matchAll(/'([a-z]+(?:\.[A-Za-z]+)+)'/g)) used.add(m[1]);
+  for (const file of ['public/app.js', 'scripts/build-artifact.js']) for (const m of fs.readFileSync(file, 'utf8').matchAll(/'([a-z]+(?:\.[A-Za-z]+)+)'/g)) if (!m[1].startsWith('openchess.')) used.add(m[1]);
   // Keys the app builds at runtime from a side, piece, mode or error code.
   for (const side of ['w', 'b']) { used.add('turn.' + side); used.add('msg.find.' + side); used.add('msg.newGame.' + side); for (const piece of 'pnbrqk') used.add('square.' + side + piece); }
   for (const piece of 'qrbn') used.add('piece.' + piece);
   for (const piece of 'pnbrqk') used.add('pieceName.' + piece);
-  for (const who of ['you', 'bot', 'w', 'b']) used.add('who.' + who);
-  for (const mode of ['practice', 'bot']) for (const part of ['title', 'titleEm', 'subtitle']) used.add(`mode.${mode}.${part}`);
-  for (const code of ['engineLoad', 'analysisTimeout', 'library']) used.add('error.' + code);
+  for (const who of ['you', 'bot', 'opp', 'w', 'b']) used.add('who.' + who);
+  for (const mode of ['practice', 'bot', 'drills']) for (const part of ['title', 'titleEm', 'subtitle']) used.add(`mode.${mode}.${part}`);
+  for (const side of ['w', 'b']) used.add('drill.title.' + side);
+  for (const code of ['engineLoad', 'analysisTimeout', 'library', 'puzzles']) used.add('error.' + code);
   assert.deepEqual([...used].filter(key => !Object.hasOwn(STRINGS.en, key)), []);
 });
 

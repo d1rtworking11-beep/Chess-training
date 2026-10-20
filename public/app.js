@@ -6,7 +6,8 @@ const $ = id => document.getElementById(id);
 const pieces = {k:'♚',q:'♛',r:'♜',b:'♝',n:'♞',p:'♟'};
 // Text on the page is rendered from this state, so switching language can redraw everything.
 // reveal: how far the hint for the current position is shown (1 = piece, 2 = best move).
-const state = {chess:new Chess(), mode:'practice', library:[], libraryError:null, record:null, recordMoves:[], ply:0, flipped:false, selected:null, legal:[], last:null, revision:0, busy:false, thinking:false, botToken:0, evaluation:null, lines:[], page:0, reviewRun:0, gameReview:null, progress:null, message:{key:'msg.selectPiece',params:{}}, analysis:null, shown:{kind:'empty'}, engine:'starting', bot:{elo:'1500',side:'w'}, reveal:{fen:null,step:0,wait:false}, linesFor:null};
+const state = {chess:new Chess(), mode:'practice', library:[], libraryError:null, record:null, recordMoves:[], ply:0, flipped:false, selected:null, legal:[], last:null, revision:0, busy:false, thinking:false, botToken:0, evaluation:null, lines:[], page:0, reviewRun:0, gameReview:null, progress:null, message:{key:'msg.selectPiece',params:{}}, analysis:null, shown:{kind:'empty'}, engine:'starting', bot:{elo:'1500',side:'w'}, reveal:{fen:null,step:0,wait:false}, linesFor:null,
+  drill:{puzzles:null,loading:null,error:null,length:'any',current:null,side:'w',startFen:null,solution:[],index:0,left:0,status:'idle',engineMode:false,usedHint:false,firstTry:true,run:0,recent:[],stats:{solved:0,attempts:0,streak:0,best:0}}};
 const engine = new Engine();
 const analyses = new Map(), reviews = new Map();
 let theory = () => ({book:false, opening:null});
@@ -15,8 +16,12 @@ engine.ready.then(() => { state.engine='ready'; renderEngineState(); }).catch(er
 const errorText = error => error?.code ? t('error.'+error.code) : String(error?.message ?? error);
 const engineName = () => t(engine.compat ? 'engine.compat' : 'engine.name');
 // Engine lines and tips would give the move away while you are finding it yourself.
-const hideLines = () => state.mode==='bot' || $('guess-mode').checked;
-const whoOf = move => state.mode==='bot' ? (move.color===state.bot.side?'you':'bot') : move.color;
+const hideLines = () => state.mode==='bot' || (state.mode==='drills' ? state.drill.status==='playing' : $('guess-mode').checked);
+// Your colour when you play against the bot or solve a drill; master games are told by colour instead.
+const userSide = () => state.mode==='bot' ? state.bot.side : state.mode==='drills' ? state.drill.side : null;
+const whoOf = move => userSide() ? (move.color===userSide()?'you':state.mode==='drills'?'opp':'bot') : move.color;
+// The hint follows a drill's known solution until you leave it; otherwise the engine's best move.
+const hintMove = () => { const d=state.drill; return state.mode==='drills'&&d.status==='playing'&&!d.engineMode ? d.solution[d.index] : state.lines[0]?.pv[0]; };
 const moveLabel = move => move.before.split(' ')[5]+(move.color==='w'?'. ':'… ')+move.san;
 const pieceSrc = (color, type) => '/pieces/'+color+type.toUpperCase()+'.svg';
 function message(key, params={}) { state.message={key,params}; renderMessage(); }
@@ -57,7 +62,7 @@ const reduceMotion = () => globalThis.matchMedia?.('(prefers-reduced-motion: red
 function render(){ if(performance.now()<motion.until)motion.pending=true; else renderBoard(); renderPanel(); }
 function renderBoard() {
   const c=state.chess,fen=c.fen(); const files=state.flipped?'hgfedcba':'abcdefgh'; const ranks=state.flipped?'12345678':'87654321';
-  const lastReview=reviewOf(state.last),hint=state.reveal.fen===fen?state.reveal.step:0,best=state.lines[0]?.pv[0];
+  const lastReview=reviewOf(state.last),hint=state.reveal.fen===fen?state.reveal.step:0,best=hintMove();
   $('board').replaceChildren();
   for(const rank of ranks) for(const file of files){
     const sq=file+rank,p=c.get(sq),button=document.createElement('button');
@@ -71,7 +76,7 @@ function renderBoard() {
   }
   // The hint arrow wins; otherwise show the better alternative to the last move, except for the bot's moves.
   if(hint>=2&&best) $('board').append(drawArrow(best,'hint'));
-  else if(lastReview?.bestUci && (state.mode!=='bot'||state.last.color===state.bot.side)) $('board').append(drawArrow(lastReview.bestUci));
+  else if(lastReview?.bestUci && (!userSide()||state.last.color===userSide())) $('board').append(drawArrow(lastReview.bestUci));
 }
 function renderPanel(){
   const c=state.chess;
@@ -79,13 +84,15 @@ function renderPanel(){
   const history=moveList();
   $('moves').replaceChildren();
   for(let i=0;i<history.length;i++){
-    if(i%2===0){const n=document.createElement('span');n.textContent=i/2+1+'.';$('moves').append(n);}
-    const b=document.createElement('button');const review=reviewOf(history[i]);if(review)b.append(badge(review.category,'mini'));b.append(history[i].san);b.className=i===c.history().length-1?'current':'';
-    b.disabled=state.mode==='bot';b.onclick=()=>loadPosition(i+1);$('moves').append(b);
+    const m=history[i];
+    // Drills start mid-game: numbers come from the position, and a Black first move leaves White's cell empty.
+    if(m.color==='w'||i===0){const n=document.createElement('span');n.textContent=m.before.split(' ')[5]+(m.color==='w'?'.':'…');$('moves').append(n);if(m.color==='b')$('moves').append(document.createElement('span'));}
+    const b=document.createElement('button');const review=reviewOf(m);if(review)b.append(badge(review.category,'mini'));b.append(m.san);b.className=i===c.history().length-1?'current':'';
+    b.disabled=state.mode!=='practice';b.onclick=()=>loadPosition(i+1);$('moves').append(b);
   }
   $('history-count').textContent=t('moves.count',{n:Math.ceil(history.length/2)});
-  $('ply').textContent=t('ply',{n:Math.floor(c.history().length/2)+1});
-  for(const id of ['first','prev','next','last']) $(id).disabled=state.mode==='bot'||!state.record;
+  $('ply').textContent=t('ply',{n:c.moveNumber()});
+  for(const id of ['first','prev','next','last']) $(id).disabled=state.mode!=='practice'||!state.record;
   $('prev').disabled ||= state.ply===0; $('first').disabled ||= state.ply===0;
   $('next').disabled ||= state.record && state.ply>=state.record.moves.length; $('last').disabled ||= state.record && state.ply>=state.record.moves.length;
   $('review-game').disabled=!history.length || state.gameReview?.running;
@@ -146,6 +153,7 @@ async function reviewLast(){
 async function clickSquare(sq){
   if(state.busy||state.chess.isGameOver())return;
   if(state.mode==='bot'&&state.chess.turn()!==$('side').value)return;
+  if(state.mode==='drills'&&state.drill.status==='playing'&&state.chess.turn()!==state.drill.side)return;
   const move=state.legal.find(m=>m.to===sq);
   if(move){let promotion='q';if(move.flags.includes('p'))promotion=await choosePromotion();await playMove({from:state.selected,to:sq,promotion});return;}
   const p=state.chess.get(sq);if(p&&p.color===state.chess.turn()){state.selected=sq;state.legal=state.chess.moves({square:sq,verbose:true});}else clearSelection();render();
@@ -158,6 +166,7 @@ async function playMove(move){
   if(state.mode==='bot'&&state.gameReview)resetGameReview();
   if(state.mode==='practice'&&state.record){const expected=state.record.moves[state.ply];if($('guess-mode').checked){if(made.san===expected)message('msg.correct',{move:expected});else message('msg.differs',{played:made.san,expected});}else message('msg.exploring',{move:made.san});if(made.san===expected)state.ply++;}
   render();animateMove(made);
+  if(state.mode==='drills'&&state.drill.status==='playing'){await drillMove(made);return;}
   const analysis=analyze();reviewLast();await analysis;
   if(state.mode==='bot'&&state.chess.isGameOver())message('msg.gameOver');
   if(state.mode==='bot'&&!state.chess.isGameOver()&&state.chess.turn()!==$('side').value)await botMove(movedAt);
@@ -199,8 +208,8 @@ function renderEngineState(){
 }
 // Hint in steps: first the piece to move, then the best move, then hidden again.
 function renderHint(){
-  const c=state.chess,fen=c.fen(),reveal=state.reveal.fen===fen?state.reveal:{step:0,wait:false},best=state.lines[0]?.pv[0];
-  const botTurn=state.mode==='bot'&&(c.turn()!==state.bot.side||state.thinking);
+  const c=state.chess,fen=c.fen(),reveal=state.reveal.fen===fen?state.reveal:{step:0,wait:false},best=hintMove();
+  const botTurn=state.busy||(state.mode==='bot'&&(c.turn()!==state.bot.side||state.thinking));
   $('hint').disabled=botTurn||c.isGameOver();$('hint').title=botTurn?t('hint.botTurn'):'';
   $('hint-label').textContent=t(['hint.button','hint.best','hint.hide'][reveal.step]);
   let text='';
@@ -233,6 +242,7 @@ function loadPosition(ply){
 }
 function resetGameReview(){state.reviewRun++;state.gameReview=null;state.progress=null;$('review-progress').classList.add('hidden');$('review-summary').classList.add('hidden');}
 function renderPlayers(){
+  if(state.mode==='drills'){const you=state.drill.side,them=you==='w'?'b':'w',name=color=>color==='w'?'white':'black';$(name(you)+'-name').textContent=t('player.you');$(name(them)+'-name').textContent=t('drill.opponent');$(name(you)+'-detail').textContent=t('drill.findMate');$(name(them)+'-detail').textContent=t('drill.defends');return;}
   if(state.mode==='bot'){const {elo,side}=state.bot;$('black-name').textContent=side==='w'?t('bot.name',{elo}):t('player.you');$('white-name').textContent=side==='b'?t('bot.name',{elo}):t('player.you');$('black-detail').textContent=t('player.practice');$('white-detail').textContent=t('player.coaching');return;}
   const r=state.record;if(!r)return;
   $('black-name').textContent=r.black;$('white-name').textContent=r.white;
@@ -245,8 +255,87 @@ function renderGameInfo(){
 }
 function loadGame(record){resetGameReview();state.record=record;const replay=new Chess();state.recordMoves=record.moves.map(m=>replay.move(m));$('source-link').href=record.source;renderGameInfo();renderPlayers();loadPosition(Math.min(16,record.moves.length-1));}
 function newBot(){resetGameReview();stopBot();state.revision++;state.chess=new Chess();state.last=null;state.ply=0;clearSelection();state.bot={elo:$('elo').value,side:$('side').value};state.flipped=state.bot.side==='b';renderPlayers();render();showReview({kind:'empty'});message('msg.newGame.'+state.bot.side);analyze().then(()=>{if(state.mode==='bot'&&state.chess.turn()!==$('side').value)botMove();});}
-function renderModeText(){const m=state.mode,em=document.createElement('em');$('crumb').textContent=t(m==='practice'?'nav.practice':'nav.bot');em.textContent=t('mode.'+m+'.titleEm');$('title').replaceChildren(t('mode.'+m+'.title')+' ',em);$('subtitle').textContent=t('mode.'+m+'.subtitle');}
-function setMode(mode){state.mode=mode;$('board').classList.toggle('blindfold',mode==='practice'&&$('vision-mode').checked);document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));$('practice-settings').classList.toggle('hidden',mode!=='practice');$('bot-settings').classList.toggle('hidden',mode!=='bot');renderModeText();if(mode==='bot')newBot();else if(state.record)loadGame(state.record);}
+function renderModeText(){const m=state.mode,em=document.createElement('em'),count=m==='drills'?state.drill.puzzles?.length:state.library.length;$('game-count').textContent=count?count.toLocaleString(locale()):'…';$('game-count').nextElementSibling.textContent=t(m==='drills'?'intro.countDrills':'intro.count');$('crumb').textContent=t('nav.'+m);em.textContent=t('mode.'+m+'.titleEm');$('title').replaceChildren(t('mode.'+m+'.title')+' ',em);$('subtitle').textContent=t('mode.'+m+'.subtitle');}
+function setMode(mode,puzzleId=null){state.mode=mode;state.drill.run++;$('board').classList.toggle('blindfold',(mode==='practice'&&$('vision-mode').checked)||(mode==='drills'&&$('drill-vision').checked));document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));$('practice-settings').classList.toggle('hidden',mode!=='practice');$('bot-settings').classList.toggle('hidden',mode!=='bot');$('drill-settings').classList.toggle('hidden',mode!=='drills');renderModeText();if(mode==='bot')newBot();else if(mode==='drills')openDrills(puzzleId);else{state.flipped=false;if(state.record)loadGame(state.record);}}
+// Checkmate drills: random mate-in-3/4/5 positions from the Lichess puzzle database (public/data/puzzles.json).
+// A puzzle is [id, fen, moves, rating, n]: the first move is the opponent's, then you mate in n moves.
+const DRILL_KEY='openchess.drills';
+function loadDrillStats(){try{return {...state.drill.stats,...JSON.parse(localStorage.getItem(DRILL_KEY)||'{}')};}catch{return state.drill.stats;}}
+function saveDrillStats(){try{localStorage.setItem(DRILL_KEY,JSON.stringify(state.drill.stats));}catch{}}
+function loadPuzzles(){
+  state.drill.loading||=fetch('/data/puzzles.json').then(response=>{if(!response.ok)throw Object.assign(new Error('Unable to load the checkmate positions'),{code:'puzzles'});return response.json();}).then(data=>{state.drill.puzzles=data.puzzles;state.drill.error=null;}).catch(error=>{state.drill.error=error;state.drill.loading=null;throw error;});
+  return state.drill.loading;
+}
+async function openDrills(id){
+  stopBot();state.revision++;resetGameReview();renderDrill();
+  try{await loadPuzzles();}catch{renderDrill();return;}
+  renderModeText();
+  if(state.mode==='drills')startDrill(state.drill.puzzles.find(p=>p[0]===id));
+}
+function pickPuzzle(){
+  const d=state.drill,fits=p=>d.length==='any'||p[4]===Number(d.length),fresh=d.puzzles.filter(p=>fits(p)&&!d.recent.includes(p[0]));
+  const pool=fresh.length?fresh:d.puzzles.filter(fits),pick=pool[Math.floor(Math.random()*pool.length)];
+  d.recent=[pick[0],...d.recent].slice(0,200);return pick;
+}
+function startDrill(puzzle=null,retry=false){
+  const d=state.drill;if(!d.puzzles)return;puzzle||=pickPuzzle();
+  const [,fen,moves,,n]=puzzle,list=moves.split(' '),run=++d.run;
+  stopBot();state.revision++;resetGameReview();clearSelection();
+  Object.assign(d,{current:puzzle,solution:list.slice(1),index:0,left:n,status:'playing',engineMode:false,usedHint:false,firstTry:!retry});
+  state.chess=new Chess(fen);state.last=null;state.busy=true;state.lines=[];
+  d.side=state.chess.turn()==='w'?'b':'w';state.flipped=d.side==='b';
+  renderPlayers();showReview({kind:'empty'});renderDrill();render();
+  // Show the position, then the opponent's last move sliding in.
+  setTimeout(()=>{if(run!==d.run||state.mode!=='drills')return;state.last=uciMove(state.chess,list[0]);d.startFen=state.chess.fen();state.busy=false;render();animateMove(state.last);message('drill.prompt',{n,move:state.last.san});analyze();},450);
+}
+const retryDrill=()=>{if(state.drill.current)startDrill(state.drill.current,true);};
+async function drillMove(made){
+  const d=state.drill,run=d.run;d.left--;renderDrill();
+  if(state.chess.isCheckmate()){finishDrill(true);analyze();reviewLast();return;}
+  let reply;
+  if(!d.engineMode&&made.lan===d.solution[d.index]){reply=d.solution[d.index+1];d.index+=2;}
+  else{
+    // Another move still counts if the engine confirms it forces mate within the moves left.
+    state.busy=true;message('drill.checking');render();
+    let result;try{result=await getAnalysis(state.chess.fen(),1500);}catch(error){if(run===d.run){state.busy=false;message('msg.error',{error});render();}return;}
+    if(run!==d.run||state.mode!=='drills')return;
+    const line=result.lines[0],mateIn=line?.type==='mate'&&line.score<0?-line.score:null;
+    if(mateIn===null||mateIn>d.left){finishDrill(false,{move:made.san,slow:mateIn!==null});analyze();reviewLast();return;}
+    d.engineMode=true;reply=line.pv[0];
+  }
+  state.busy=true;message('drill.correct',{n:d.left});analyze();reviewLast();render();
+  await new Promise(resolve=>setTimeout(resolve,700));
+  if(run!==d.run||state.mode!=='drills')return;
+  state.last=uciMove(state.chess,reply);state.busy=false;render();animateMove(state.last);message('drill.yourMove',{n:d.left,move:state.last.san});analyze();reviewLast();
+}
+function finishDrill(solved,{move,slow}={}){
+  const d=state.drill,stats=d.stats;d.status=solved?'solved':'failed';d.run++;state.busy=false;
+  // Only the first try at a position counts; a hint keeps the streak from growing.
+  if(d.firstTry){stats.attempts++;if(solved){stats.solved++;if(!d.usedHint){stats.streak++;stats.best=Math.max(stats.best,stats.streak);}}else stats.streak=0;saveDrillStats();}
+  d.firstTry=false;
+  if(solved)message(d.usedHint?'drill.solvedHint':'drill.solved',{n:d.current[4]-d.left});
+  else message(slow?'drill.slow':'drill.failed',{move,line:formatLine(d.startFen,d.solution)});
+  renderDrill();renderAnalysis();render();
+}
+function formatLine(fen,ucis){const c=new Chess(fen),out=[];ucis.forEach((uci,i)=>{const m=uciMove(c,uci),number=m.before.split(' ')[5];out.push(m.color==='w'?number+'. '+m.san:(i===0?number+'… ':'')+m.san);});return out.join(' ');}
+async function showSolution(){
+  const d=state.drill;if(!d.startFen)return;const run=++d.run;
+  stopBot();state.revision++;state.chess=new Chess(d.startFen);state.last=null;state.busy=true;clearSelection();showReview({kind:'empty'});render();
+  for(const uci of d.solution){await new Promise(resolve=>setTimeout(resolve,850));if(run!==d.run||state.mode!=='drills')return;state.last=uciMove(state.chess,uci);render();animateMove(state.last);}
+  state.busy=false;analyze();reviewLast();render();
+}
+function renderDrill(){
+  const d=state.drill,p=d.current;
+  $('drill-count').textContent=d.puzzles?t('drill.count',{n:d.puzzles.length}):'';
+  for(const b of document.querySelectorAll('[data-length]'))b.setAttribute('aria-pressed',String(b.dataset.length===String(d.length)));
+  $('drill-solved').textContent=d.stats.solved;$('drill-streak').textContent=d.stats.streak;$('drill-best').textContent=d.stats.best;
+  if(d.error&&!d.puzzles){$('drill-title').textContent=t('drill.unavailable');$('drill-status').textContent=errorText(d.error);return;}
+  if(!p){$('drill-title').textContent=t('drill.loading');$('drill-status').textContent='';return;}
+  $('drill-title').textContent=t('drill.title.'+d.side,{n:p[4]});
+  $('drill-status').dataset.state=d.status;$('drill-status').textContent=d.status==='solved'?t('drill.statusSolved'):d.status==='failed'?t('drill.statusFailed'):t('drill.left',{n:d.left});
+  $('drill-solution').classList.toggle('hidden',d.status==='playing');
+  $('drill-source').href='https://lichess.org/training/'+p[0];$('drill-source').textContent=t('drill.source',{id:p[0]});$('drill-rating').textContent=t('drill.rating',{rating:p[3]});
+}
 // Full-game review: rates every move in order, then shows accuracy, a tally and an evaluation graph.
 async function reviewGame(){
   const moves=moveList();if(!moves.length)return;
@@ -296,21 +385,27 @@ function renderLibrary(){const term=$('search').value.toLowerCase();const filter
 function refreshLanguage(){
   applyStatic();
   for(const b of document.querySelectorAll('[data-lang]'))b.setAttribute('aria-pressed',String(b.dataset.lang===getLanguage()));
-  renderModeText();renderPlayers();renderGameInfo();renderMessage();renderEngineState();renderReview();renderProgress();
+  renderModeText();renderPlayers();renderGameInfo();renderMessage();renderEngineState();renderReview();renderProgress();renderDrill();
   if(state.gameReview&&!state.gameReview.running)renderSummary();
   if($('library').open)renderLibrary();
   render();
 }
 document.querySelectorAll('[data-lang]').forEach(b=>b.onclick=()=>{if(setLanguage(b.dataset.lang))refreshLanguage();});
 document.querySelectorAll('.nav').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
-$('flip').onclick=()=>{state.flipped=!state.flipped;render();};$('reset').onclick=()=>state.mode==='bot'?newBot():loadPosition(0);
+$('flip').onclick=()=>{state.flipped=!state.flipped;render();};$('reset').onclick=()=>state.mode==='bot'?newBot():state.mode==='drills'?retryDrill():loadPosition(0);
 $('first').onclick=()=>loadPosition(0);$('prev').onclick=()=>loadPosition(Math.max(0,state.ply-1));$('next').onclick=()=>loadPosition(Math.min(state.record.moves.length,state.ply+1));$('last').onclick=()=>loadPosition(state.record.moves.length);
 $('choose-game').onclick=()=>{renderLibrary();$('library').showModal();};$('close-library').onclick=()=>$('library').close();$('search').oninput=()=>{state.page=0;renderLibrary();};$('page-prev').onclick=()=>{state.page--;renderLibrary();};$('page-next').onclick=()=>{state.page++;renderLibrary();};
 $('random-game').onclick=()=>loadGame(state.library[Math.floor(Math.random()*state.library.length)]);$('elo').oninput=()=>$('elo-value').textContent=$('elo').value;$('new-bot').onclick=newBot;
-$('hint').onclick=()=>{const fen=state.chess.fen();if(state.reveal.fen!==fen)state.reveal={fen,step:0,wait:false};if(!state.lines[0]?.pv[0]){state.reveal.wait=true;renderHint();return;}state.reveal.step=(state.reveal.step+1)%3;render();};
+$('hint').onclick=()=>{const fen=state.chess.fen();if(state.reveal.fen!==fen)state.reveal={fen,step:0,wait:false};if(!hintMove()){state.reveal.wait=true;renderHint();return;}state.reveal.step=(state.reveal.step+1)%3;if(state.mode==='drills'&&state.drill.status==='playing'&&state.reveal.step)state.drill.usedHint=true;render();};
+$('drill-next').onclick=()=>startDrill();$('drill-retry').onclick=retryDrill;$('drill-solution').onclick=showSolution;
+document.querySelectorAll('[data-length]').forEach(b=>b.onclick=()=>{state.drill.length=b.dataset.length;renderDrill();if(state.drill.puzzles)startDrill();});
+$('drill-vision').onchange=()=>$('board').classList.toggle('blindfold',$('drill-vision').checked);
 $('guess-mode').onchange=()=>renderAnalysis();
+state.drill.stats=loadDrillStats();
 refreshLanguage();
 try{const response=await fetch('/data/games.json');if(!response.ok)throw Object.assign(new Error('Unable to load game library'),{code:'library'});state.library=await response.json();$('game-count').textContent=state.library.length.toLocaleString(locale());loadGame(state.library.find(g=>g.white.includes('Fischer')&&g.black.includes('Spassky'))||state.library[0]);}catch(error){state.libraryError=error;renderGameInfo();message('msg.error',{error});}
+// A #drill-<puzzle id> link opens that position in the checkmate drill.
+const drillLink=/^#drill-([A-Za-z0-9]+)$/.exec(location.hash);if(drillLink)setMode('drills',drillLink[1]);
 
 $('vision-mode').onchange=()=>{$('board').classList.toggle('blindfold',$('vision-mode').checked);message($('vision-mode').checked?'msg.piecesHidden':'msg.piecesShown');};
 $('download-pgn').onclick=()=>{const url=URL.createObjectURL(new Blob([state.record.pgn],{type:'application/x-chess-pgn'}));const a=document.createElement('a');a.href=url;a.download=state.record.id+'.pgn';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};

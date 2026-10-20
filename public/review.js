@@ -230,7 +230,7 @@ export function motifs(Chess, move) {
 }
 
 // The move comment shown in the review card: what the move does, the verdict, and who stands better.
-// `who` is 'you', 'bot', 'w' or 'b'; `previous` is the same player's previous review, for "stronger".
+// `who` is 'you', 'bot', 'opp', 'w' or 'b'; `previous` is the same player's previous review, for "stronger".
 const NAME_EN = {p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king'};
 const RU = {
   dat: {p: 'пешке', n: 'коню', b: 'слону', r: 'ладье', q: 'ферзю', k: 'королю'},
@@ -301,26 +301,28 @@ const STANDING = {
   en: {
     you: ['You are winning.', 'You are clearly better.', 'You have a slight edge.', 'The position is balanced.', 'You are slightly worse.', 'You are clearly worse.', 'You are losing.'],
     bot: ['The bot is winning.', 'The bot is clearly better.', 'The bot has a slight edge.', 'The position is balanced.', 'The bot is slightly worse.', 'The bot is clearly worse.', 'The bot is losing.'],
+    opp: ['The opponent is winning.', 'The opponent is clearly better.', 'The opponent has a slight edge.', 'The position is balanced.', 'The opponent is slightly worse.', 'The opponent is clearly worse.', 'The opponent is losing.'],
     w: ['White is winning.', 'White is clearly better.', 'White has a slight edge.', 'The position is balanced.', 'White is slightly worse.', 'White is clearly worse.', 'White is losing.'],
     b: ['Black is winning.', 'Black is clearly better.', 'Black has a slight edge.', 'The position is balanced.', 'Black is slightly worse.', 'Black is clearly worse.', 'Black is losing.'],
   },
   ru: {
     you: ['Вы выигрываете.', 'У вас явный перевес.', 'У вас небольшое преимущество.', 'Позиция равна.', 'Ваша позиция чуть хуже.', 'Ваша позиция заметно хуже.', 'Вы проигрываете.'],
     bot: ['Бот выигрывает.', 'У бота явный перевес.', 'У бота небольшое преимущество.', 'Позиция равна.', 'Позиция бота чуть хуже.', 'Позиция бота заметно хуже.', 'Бот проигрывает.'],
+    opp: ['Соперник выигрывает.', 'У соперника явный перевес.', 'У соперника небольшое преимущество.', 'Позиция равна.', 'Позиция соперника чуть хуже.', 'Позиция соперника заметно хуже.', 'Соперник проигрывает.'],
     w: ['Белые выигрывают.', 'У белых явный перевес.', 'У белых небольшое преимущество.', 'Позиция равна.', 'Позиция белых чуть хуже.', 'Позиция белых заметно хуже.', 'Белые проигрывают.'],
     b: ['Чёрные выигрывают.', 'У чёрных явный перевес.', 'У чёрных небольшое преимущество.', 'Позиция равна.', 'Позиция чёрных чуть хуже.', 'Позиция чёрных заметно хуже.', 'Чёрные проигрывают.'],
   },
 };
 const STRONGER = {
-  en: {you: 'Your position gets stronger.', bot: "The bot's position gets stronger.", w: "White's position gets stronger.", b: "Black's position gets stronger."},
-  ru: {you: 'Ваша позиция становится сильнее.', bot: 'Позиция бота становится сильнее.', w: 'Позиция белых становится сильнее.', b: 'Позиция чёрных становится сильнее.'},
+  en: {you: 'Your position gets stronger.', bot: "The bot's position gets stronger.", opp: "The opponent's position gets stronger.", w: "White's position gets stronger.", b: "Black's position gets stronger."},
+  ru: {you: 'Ваша позиция становится сильнее.', bot: 'Позиция бота становится сильнее.', opp: 'Позиция соперника становится сильнее.', w: 'Позиция белых становится сильнее.', b: 'Позиция чёрных становится сильнее.'},
 };
 const ERRORS = ['allowsMate', 'missesMate', 'loses', 'miss', 'slip'];
 const standingLevel = w => w >= 0.9 ? 0 : w >= 0.72 ? 1 : w >= 0.58 ? 2 : w > 0.42 ? 3 : w > 0.28 ? 4 : w > 0.1 ? 5 : 6;
 export function comment(review, lang = 'en', {who = review.mover, previous = null} = {}) {
   const L = lang === 'ru' ? 'ru' : 'en', kind = review.reason.kind, parts = [], found = review.motifs || [];
   if (found.length) parts.push(review.san + ' ' + found.map(m => CLAUSE[L][m.kind](m)).join(L === 'ru' ? ' и ' : ' and ') + '.');
-  const verdict = VERDICT[L][kind]?.(review, review.reason);
+  const verdict = kind === 'bestWins' && found.some(m => m.kind === 'capture') ? null : VERDICT[L][kind]?.(review, review.reason);
   if (verdict) parts.push(verdict);
   if (!ERRORS.includes(kind) && kind !== 'checkmate' && kind !== 'bestMate') {
     if (previous && review.winAfter - previous.winAfter >= 0.08) parts.push(STRONGER[L][who]);

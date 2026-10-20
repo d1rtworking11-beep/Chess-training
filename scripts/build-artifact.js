@@ -28,6 +28,7 @@ app = replaceOnce(app, "from '/vendor/chess.js'", "from './vendor/chess.js'");
 app = replaceOnce(app, "'/pieces/'", "'pieces/'");
 app = replaceOnce(app, "fetch('/data/games.json')", "fetch('data/games.json')");
 app = replaceOnce(app, "fetch('/data/openings.json')", "fetch('data/openings.json')");
+app = replaceOnce(app, "fetch('/data/puzzles.json')", "fetch('data/puzzles.json')");
 // Sandboxed viewers block downloads, so show the PGN in a dialog with a copy button instead.
 app = replaceOnce(app, /\$\('download-pgn'\)\.onclick=.*$/m.exec(app)[0],
   "$('download-pgn').onclick=()=>{$('pgn-text').value=state.record.pgn;$('pgn-dialog').showModal();$('pgn-text').select();};\n" +

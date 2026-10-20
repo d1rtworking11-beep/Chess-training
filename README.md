@@ -4,6 +4,8 @@ Free chess training with 750 real Fischer, Kasparov and Carlsen games, move repl
 
 Every move gets a review in the style of Chess.com: a symbol on the moved piece, a label from Brilliant to Blunder, and a short comment on what the move did and how the position changed. This covers your moves, the bot's replies and the masters' moves. A full-game review adds accuracy for both players, a tally of labels and an evaluation graph.
 
+**Checkmate drills** drop you into a random position from a real game, where you have three to five moves to deliver mate. There are 10,000 positions to train your board vision.
+
 ## Run
 
 Requires Node.js 24 (Node 22.12+ also supports the build).
@@ -21,13 +23,21 @@ npm test
 npm run test:e2e
 ```
 
-Browser tests use the environment's `/usr/bin/chromium`. Set `CHROMIUM_PATH` for another local Chromium installation. They exercise desktop/mobile, the game library, replay, legal moves, analysis, a real bot response, move-review badges, a full-game review and the Russian interface. `npm test` checks all 750 game sequences, core rules, the move-review classifier and the translations.
+Browser tests use the environment's `/usr/bin/chromium`. Set `CHROMIUM_PATH` for another local Chromium installation. They exercise desktop/mobile, the game library, replay, legal moves, analysis, a real bot response, move-review badges, a full-game review, the Russian interface and the checkmate drill. `npm test` checks all 750 game sequences, all 10,000 drill positions, core rules, the move-review classifier and the translations.
 
 ## Hints and playing the bot
 
 During a bot game, and in master games while "Guess the master's next move" is on, the engine's candidate lines and move tips stay hidden so you find the move yourself. **Show engine lines** reveals them for the current position. The **Show hint** button sits under the move review: the first click highlights the piece to move, the second shows the best move with an arrow, and the third hides the hint. In a bot game, hints work on your turn only.
 
 The bot replies 3–5 seconds after your move, so you have time to read your move's comment. Pieces slide to their squares and captured pieces fade out; with the system's reduced-motion setting, moves appear instantly.
+
+## Checkmate drills
+
+Each drill position comes from the [Lichess puzzle database](https://database.lichess.org/#puzzles), which is released under CC0-1.0 (public domain). The bundled snapshot is from 2026-10-02. `public/data/puzzles.json` holds 10,000 puzzles: 4,000 mate-in-3, 3,500 mate-in-4 and 2,500 mate-in-5. Only well-tested puzzles are used: a rating deviation of 80 or less, popularity of 85 or more, and at least 300 plays. They are spread evenly across six rating bands from beginner to master. Mate-in-5 puzzles lean towards 1500–2400, because few easy ones exist. Every puzzle is replayed during import, and again by `npm test`, to confirm it ends in checkmate in exactly that many moves. The file is about 1.1 MB (470 KB gzipped) and loads only when you open the drill.
+
+The opponent's last move plays first, then you have three, four or five moves. If you follow the puzzle's solution, the opponent answers with the solution's replies. If you find a different move, the engine searches for 1.5 seconds; the move counts if the engine confirms it still forces mate in the moves you have left, and the engine then defends as long as it can. Choose **Mate in: Any / 3 / 4 / 5**. Use **Try again**, **Show solution**, the step-by-step hint, or the option to hide the pieces. Solved positions, your streak and your best streak are saved in your browser. A hint still counts as solved, but your streak doesn't grow. Each position links to its Lichess puzzle page and source game. A link ending in `#drill-<puzzle id>` opens that exact position.
+
+To rebuild the positions, download `lichess_db_puzzle.csv.zst` from the Lichess database and run `node scripts/import-puzzles.js lichess_db_puzzle.csv.zst <snapshot date>`. Node 24 reads the compressed file directly. The same snapshot always gives the same selection.
 
 ## Languages
 
@@ -70,6 +80,8 @@ Each comment says what the move does on the board: it castles, develops a piece,
 750 distinct legal match records are bundled in `public/data/games.json`: 250 each from Fischer, Kasparov and Carlsen collections, sampled across their careers. Each record contains the original PGN and source link. These are real historical games, not generated positions; inclusion does not imply that every match is famous. The underlying PGN collections are mirrored from PGN Mentor in [rozim/ChessData](https://github.com/rozim/ChessData), snapshot `ed88abd2716da58ee55d42b662455c1c8ebe0776`, directory `PgnMentor`. No annotated commentary from the collections is used. Chess moves are factual records; source collection rights should be reviewed before a broad public distribution.
 
 To rebuild the data, obtain the three source PGNs and run `node scripts/import-games.js /path/Fischer.pgn /path/Kasparov.pgn /path/Carlsen.pgn`. The bundled file makes network downloads unnecessary during normal setup.
+
+Checkmate drill positions come from the Lichess puzzle database (CC0-1.0); see [Checkmate drills](#checkmate-drills).
 
 Opening names and Book moves come from the Lichess opening list, [lichess-org/chess-openings](https://github.com/lichess-org/chess-openings), commit `a6189a30dc27`, released under CC0-1.0 (public domain). Its 3,865 named lines with ECO codes are stored in `public/data/openings.json` as the 7,982 positions they pass through: about 750 KB, or 90 KB gzipped. Matching positions rather than move sequences means a transposed move order still counts as theory. To rebuild the file, clone that repository and run `node scripts/import-openings.js /path/to/chess-openings <commit>`.
 
