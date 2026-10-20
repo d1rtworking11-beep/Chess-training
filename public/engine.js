@@ -1,12 +1,29 @@
+// WebAssembly build first; the pure-JavaScript build is slower but runs where a
+// security policy blocks WebAssembly.
+const BUILDS = [
+  {url: '/engine/stockfish-19-lite-single.js', name: 'Stockfish 19', wasm: true},
+  {url: '/engine/stockfish-19-asm.js', name: 'Stockfish 19 · compatibility mode', wasm: false},
+];
+function wasmAllowed() {
+  try { new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])); return true; } catch { return false; }
+}
 export class Engine {
   constructor() {
-    this.worker = new Worker('/engine/stockfish-19-lite-single.js');
     this.queue = Promise.resolve();
-    this.ready = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('Engine startup timed out. Reload to retry.')), 30000);
-      this.worker.onmessage = ({data}) => { if (String(data).includes('uciok')) { clearTimeout(timer); resolve(); } };
-      this.worker.onerror = () => { clearTimeout(timer); reject(new Error('Engine could not load. Reload to retry.')); };
-      this.worker.postMessage('uci');
+    const builds = wasmAllowed() ? BUILDS : BUILDS.filter(b => !b.wasm);
+    this.ready = this.start(builds);
+  }
+  start([build, ...rest]) {
+    return new Promise((resolve, reject) => {
+      const worker = new Worker(build.url);
+      const fail = () => {
+        clearTimeout(timer); worker.terminate();
+        if (rest.length) resolve(this.start(rest)); else reject(Object.assign(new Error('Engine could not load. Reload to retry.'), {code: 'engineLoad'}));
+      };
+      const timer = setTimeout(fail, 25000);
+      worker.onmessage = ({data}) => { if (String(data).includes('uciok')) { clearTimeout(timer); this.worker = worker; this.name = build.name; this.compat = !build.wasm; resolve(build.name); } };
+      worker.onerror = event => { event.preventDefault?.(); fail(); };
+      worker.postMessage('uci');
     });
   }
   analyze(fen, {elo = null, time = 500} = {}) {
@@ -14,7 +31,7 @@ export class Engine {
       await this.ready;
       return new Promise((resolve, reject) => {
         const lines = new Map();
-        const timer = setTimeout(() => { this.worker.postMessage('stop'); reject(new Error('Analysis timed out.')); }, 15000);
+        const timer = setTimeout(() => { this.worker.postMessage('stop'); reject(Object.assign(new Error('Analysis timed out.'), {code: 'analysisTimeout'})); }, 15000);
         this.worker.onmessage = ({data}) => {
           const text = String(data);
           if (text.startsWith('info depth') && text.includes(' pv ')) {
