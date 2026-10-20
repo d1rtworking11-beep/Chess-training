@@ -4,7 +4,7 @@ test('library, replay, hidden lines, hints, move comments and a timed bot reply 
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto('/');await expect(page.locator('#game-count')).toHaveText('750');
  await expect(page.locator('#engine-state')).toContainText('Stockfish',{timeout:45000});
- await expect(page.locator('.line')).toHaveCount(0);await page.locator('#show-lines').click();await expect(page.locator('.line')).toHaveCount(3);
+ await expect(page.locator('.line')).toHaveCount(0);await page.locator('#engine-toggle').click();await expect(page.locator('.line')).toHaveCount(3);await expect(page.locator('.square.last')).toHaveCount(2);
  await page.locator('#choose-game').click();await page.locator('#search').fill('Fischer');await expect(page.locator('.game-row').first()).toBeVisible();
  await page.locator('.game-row').first().click();await expect(page.locator('#match-title')).toContainText('Fischer');
  await page.locator('#first').click();await expect(page.locator('#ply')).toHaveText('Move 1');await page.locator('#next').click();await expect(page.locator('#turn')).toHaveText('Black to move');
@@ -75,15 +75,17 @@ test('checkmate drill: solve a position, miss another, replay the solution and p
  const [id,,moves]=puzzles.find(p=>p[4]===3&&p[2].split(' ').every(m=>m.length===4)),list=moves.split(' ');
  await page.goto('/#drill-'+id);await expect(page.locator('#drill-title')).toHaveText(/^(White|Black) to move · mate in 3$/,{timeout:30000});
  await expect(page.locator('#drill-source')).toHaveAttribute('href','https://lichess.org/training/'+id);await expect(page.locator('.line')).toHaveCount(0);
+ await expect(page.locator('#engine-toggle')).toBeDisabled();await expect(page.locator('#drill-heading')).toHaveText('Your turn',{timeout:20000});await expect(page.locator('#drill-plays')).toContainText('Played');await expect(page.locator('#drill-next')).toBeHidden();
  for(let i=1;i<list.length;i+=2){await expect(page.locator('#hint')).toBeEnabled({timeout:20000});await page.locator(`[data-square="${list[i].slice(0,2)}"]`).click();await page.locator(`[data-square="${list[i].slice(2,4)}"]`).click();}
  await expect(page.locator('#drill-status')).toHaveText('Solved',{timeout:20000});await expect(page.locator('#board-message')).toContainText('Checkmate! Solved in 3 moves');
  await expect(page.locator('#turn')).toHaveText('Checkmate');await expect(page.locator('#drill-solved')).toHaveText('1');await expect(page.locator('#drill-streak')).toHaveText('1');
+ await expect(page.locator('#drill-heading')).toHaveText('Success!');await expect(page.locator('#drill-next')).toBeVisible();await expect(page.locator('#drill-history .chip-ok')).toHaveCount(1);await expect(page.locator('#moves .mark.ok')).toHaveCount(3);await expect(page.locator('#engine-toggle')).toBeEnabled();
  // A quiet pawn move instead of the solution lets the opponent escape.
  const [id2,fen2,moves2]=puzzles.find(p=>p[4]===4&&p[0]!==id),chess=new Chess(fen2),first=moves2.split(' ');chess.move({from:first[0].slice(0,2),to:first[0].slice(2,4),promotion:first[0][4]});
  const quiet=chess.moves({verbose:true}).find(m=>m.lan!==first[1]&&m.piece==='p'&&!m.captured&&!m.promotion&&!/[+#]/.test(m.san))||chess.moves({verbose:true}).find(m=>m.lan!==first[1]&&!m.captured&&!/[+#]/.test(m.san));
  await page.goto('/?again#drill-'+id2);await expect(page.locator('#drill-title')).toHaveText(/mate in 4$/,{timeout:30000});await expect(page.locator('#hint')).toBeEnabled({timeout:20000});
  await page.locator(`[data-square="${quiet.from}"]`).click();await page.locator(`[data-square="${quiet.to}"]`).click();
- await expect(page.locator('#drill-status')).toHaveText('Not solved',{timeout:30000});await expect(page.locator('#board-message')).toContainText('Solution:');
+ await expect(page.locator('#drill-status')).toHaveText('Not solved',{timeout:30000});await expect(page.locator('#board-message')).toContainText('Solution:');await expect(page.locator('#drill-heading')).toHaveText('Puzzle failed');await expect(page.locator('#moves .mark.fail')).toHaveCount(1);await expect(page.locator('#drill-history .chip-fail')).toHaveCount(1);
  await expect(page.locator('#drill-solved')).toHaveText('1');await expect(page.locator('#drill-streak')).toHaveText('0');await expect(page.locator('.line')).not.toHaveCount(0,{timeout:20000});
  await page.locator('#drill-solution').click();await expect(page.locator('#turn')).toHaveText('Checkmate',{timeout:20000});
  const shown=await page.locator('#drill-source').getAttribute('href');await page.locator('#drill-next').click();await expect(page.locator('#drill-source')).not.toHaveAttribute('href',shown);

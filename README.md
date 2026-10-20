@@ -25,17 +25,27 @@ npm run test:e2e
 
 Browser tests use the environment's `/usr/bin/chromium`. Set `CHROMIUM_PATH` for another local Chromium installation. They exercise desktop/mobile, the game library, replay, legal moves, analysis, a real bot response, move-review badges, a full-game review, the Russian interface and the checkmate drill. `npm test` checks all 750 game sequences, all 10,000 drill positions, core rules, the move-review classifier and the translations.
 
+## Look
+
+The interface uses warm dark-grey panels, blue for the main actions and a brown wooden board in every mode. The board shows coordinates inside the edge squares, a yellow-green highlight for the last move and a red glow on a king in check. Move lists show small piece images in place of K, Q, R, B and N. All colours come from the tokens at the top of `public/style.css`.
+
 ## Hints and playing the bot
 
-During a bot game, and in master games while "Guess the master's next move" is on, the engine's candidate lines and move tips stay hidden so you find the move yourself. **Show engine lines** reveals them for the current position. The **Show hint** button sits under the move review: the first click highlights the piece to move, the second shows the best move with an arrow, and the third hides the hint. In a bot game, hints work on your turn only.
+During a bot game, and in master games while "Guess the master's next move" is on, the engine's candidate lines and move tips stay hidden so you find the move yourself. The switch at the top of the analysis panel turns them on. During a checkmate drill the switch stays locked, and the evaluation bar stays level, until the puzzle ends. The **Show hint** button sits under the move review: the first click highlights the piece to move, the second shows the best move with an arrow, and the third hides the hint. In a bot game, hints work on your turn only.
 
 The bot replies 3–5 seconds after your move, so you have time to read your move's comment. Pieces slide to their squares and captured pieces fade out; with the system's reduced-motion setting, moves appear instantly.
 
 ## Checkmate drills
 
-Each drill position comes from the [Lichess puzzle database](https://database.lichess.org/#puzzles), which is released under CC0-1.0 (public domain). The bundled snapshot is from 2026-10-02. `public/data/puzzles.json` holds 10,000 puzzles: 4,000 mate-in-3, 3,500 mate-in-4 and 2,500 mate-in-5. Only well-tested puzzles are used: a rating deviation of 80 or less, popularity of 85 or more, and at least 300 plays. They are spread evenly across six rating bands from beginner to master. Mate-in-5 puzzles lean towards 1500–2400, because few easy ones exist. Every puzzle is replayed during import, and again by `npm test`, to confirm it ends in checkmate in exactly that many moves. The file is about 1.1 MB (470 KB gzipped) and loads only when you open the drill.
+Each drill position comes from the [Lichess puzzle database](https://database.lichess.org/#puzzles), which is released under CC0-1.0 (public domain). The bundled snapshot is from 2026-10-02. `public/data/puzzles.json` holds 10,000 puzzles, each with its rating, play count and source game: 4,000 mate-in-3, 3,500 mate-in-4 and 2,500 mate-in-5. Only well-tested puzzles are used: a rating deviation of 80 or less, popularity of 85 or more, and at least 300 plays. They are spread evenly across six rating bands from beginner to master. Mate-in-5 puzzles lean towards 1500–2400, because few easy ones exist. Every puzzle is replayed during import, and again by `npm test`, to confirm it ends in checkmate in exactly that many moves. The file is about 1.4 MB (610 KB gzipped) and loads only when you open the drill.
 
-The opponent's last move plays first, then you have three, four or five moves. If you follow the puzzle's solution, the opponent answers with the solution's replies. If you find a different move, the engine searches for 1.5 seconds; the move counts if the engine confirms it still forces mate in the moves you have left, and the engine then defends as long as it can. Choose **Mate in: Any / 3 / 4 / 5**. Use **Try again**, **Show solution**, the step-by-step hint, or the option to hide the pieces. Solved positions, your streak and your best streak are saved in your browser. A hint still counts as solved, but your streak doesn't grow. Each position links to its Lichess puzzle page and source game. A link ending in `#drill-<puzzle id>` opens that exact position.
+The opponent's last move plays first, then you have three, four or five moves. If you follow the puzzle's solution, the opponent answers with the solution's replies. If you find a different move, the engine searches for 1.5 seconds; the move counts if the engine confirms it still forces mate in the moves you have left, and the engine then defends as long as it can. The page follows the familiar puzzle layout:
+
+- **Left column:** the puzzle's rating, play count and links to its Lichess page and source game, the mate length (Any, 3, 4 or 5), your progress, and two switches: "Jump to next puzzle immediately" and hiding the pieces.
+- **Center:** the board, with a row of chips for this session's results. Green means solved, gold means solved with a hint, red means missed, and blue is the current position. Click a chip to try that position again.
+- **Right column:** the engine switch, the move table with ✓ and ✗ marks, the feedback panel (Your turn, Good move!, Success!, Puzzle failed) and **Continue training**.
+
+**View the solution** replays the answer and counts as a miss. Solved positions, your streak and your best streak are saved in your browser. A hint still counts as solved, but your streak doesn't grow. A link ending in `#drill-<puzzle id>` opens that exact position.
 
 To rebuild the positions, download `lichess_db_puzzle.csv.zst` from the Lichess database and run `node scripts/import-puzzles.js lichess_db_puzzle.csv.zst <snapshot date>`. Node 24 reads the compressed file directly. The same snapshot always gives the same selection.
 

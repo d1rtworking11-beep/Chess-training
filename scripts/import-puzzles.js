@@ -1,5 +1,6 @@
 // Builds public/data/puzzles.json from the Lichess puzzle database (CC0-1.0): mate-in-3, 4 and 5
 // puzzles from real games, spread across rating bands, each replayed to check it ends in checkmate.
+// Each puzzle is [id, fen, moves, rating, n, plays, source game path on lichess.org].
 // Usage: node scripts/import-puzzles.js lichess_db_puzzle.csv.zst [snapshot-date]
 import fs from 'node:fs';
 import readline from 'node:readline';
@@ -25,11 +26,12 @@ let rows = 0;
 const input = fs.createReadStream(file).pipe(zlib.createZstdDecompress());
 for await (const line of readline.createInterface({input, crlfDelay: Infinity})) {
   if (!rows++) { if (!line.startsWith(COLUMNS)) throw new Error('Unexpected columns: ' + line); continue; }
-  const [id, fen, moves, rating, deviation, popularity, plays, themes] = line.split(',');
+  const [id, fen, moves, rating, deviation, popularity, plays, themes, gameUrl] = line.split(',');
   const n = /\bmateIn([345])\b/.exec(themes)?.[1];
   // Well-tested, well-liked puzzles only: a settled rating, positive votes and plenty of plays.
   if (!n || Number(deviation) > 80 || Number(popularity) < 85 || Number(plays) < 300) continue;
-  candidates[n].push({id, fen, moves, rating: Number(rating), n: Number(n), key: hash(id)});
+  // The source game is kept as its path on lichess.org, such as 787zsVup/black#48.
+  candidates[n].push({id, fen, moves, rating: Number(rating), n: Number(n), plays: Number(plays), game: gameUrl.replace('https://lichess.org/', ''), key: hash(id)});
 }
 // Takes puzzles from every rating band in turn, so easy and hard positions are equally represented.
 function pick(list, quota) {
@@ -45,6 +47,6 @@ function pick(list, quota) {
   return chosen;
 }
 const chosen = [3, 4, 5].map(n => pick(candidates[n], QUOTA[n]));
-const puzzles = chosen.flat().sort((a, b) => a.key - b.key).map(p => [p.id, p.fen, p.moves, p.rating, p.n]);
+const puzzles = chosen.flat().sort((a, b) => a.key - b.key).map(p => [p.id, p.fen, p.moves, p.rating, p.n, p.plays, p.game]);
 fs.writeFileSync('public/data/puzzles.json', JSON.stringify({source: 'https://database.lichess.org/#puzzles', license: 'CC0-1.0', snapshot, puzzles}));
 console.log(`Read ${rows - 1} puzzles; candidates mate in 3/4/5: ${[3, 4, 5].map(n => candidates[n].length).join('/')}; saved ${puzzles.length} (${chosen.map(c => c.length).join('/')})`);
